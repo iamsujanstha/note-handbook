@@ -12,23 +12,32 @@ import {
   setStoredLastActiveChapterId,
   getStoredAdminToken,
   setStoredAdminToken,
-  setStoredAdminPasskey,
   clearStoredReadingPosition,
+  cacheChapterContent,
+  getCachedChapterContent,
+  hydrateChaptersFromCache,
+  saveStoredGlobalCss,
+  saveStoredCustomCssFile,
 } from './lib/storage';
 import {
   fetchTopics,
   saveTopicsApi,
   deleteTopicApi,
   fetchChapters,
+  fetchChapterById,
   createChapterApi,
   updateChapterApi,
   deleteChapterApi,
   reorderChaptersApi,
   uploadHtmlChapterApi,
   verifyAdminTokenApi,
-  syncToLiveSiteApi,
   publishAllChaptersApi,
   syncChaptersApi,
+  exportDatabaseBackupApi,
+  restoreBackupApi,
+  uploadGlobalCssApi,
+  uploadCssFileApi,
+  pullFromLiveSiteApi,
 } from './lib/api';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -40,9 +49,13 @@ import { DeleteChapterModal } from './components/DeleteChapterModal';
 import { BrowserHtmlFrame, BrowserHtmlFrameRef } from './components/BrowserHtmlFrame';
 import { FloatingTableOfContents } from './components/FloatingTableOfContents';
 import { CssUploadDecisionModal } from './components/CssUploadDecisionModal';
-import { isMarkdownContent, extractTitle, convertMarkdownToHtml, parseMarkdownHeadings } from './lib/markdown';
-import { saveStoredGlobalCss, saveStoredCustomCssFile } from './lib/storage';
-import { uploadGlobalCssApi, uploadCssFileApi } from './lib/api';
+import { ScribdLockOverlay } from './components/ScribdLockOverlay';
+import { isMarkdownContent, extractTitle, parseMarkdownHeadings } from './lib/markdown';
+import {
+  resolveChapterFromLocation,
+  buildSeoHashUrl,
+  updateDocumentSeo,
+} from './lib/seo';
 import {
   readFileWithProgress,
   formatBytes,
@@ -52,20 +65,9 @@ import {
 import {
   BookOpen,
   Plus,
-  UploadCloud,
-  FilePlus,
   CheckCircle2,
-  AlertTriangle,
   FolderOpen,
-  Edit,
-  ArrowRight,
-  ShieldAlert,
-  Lock,
-  ShieldCheck,
-  Eye,
   X,
-  Palette,
-  FileCode,
   Upload,
   Loader2,
 } from 'lucide-react';
@@ -81,7 +83,14 @@ export default function App() {
     getStoredReadingPositions()
   );
   const [activeChapterId, setActiveChapterId] = useState<string | null>(() => {
+    const initialTopics = getStoredTopics();
     const initialChaps = getStoredChapters();
+
+    if (typeof window !== 'undefined') {
+      const fromUrl = resolveChapterFromLocation(initialTopics, initialChaps);
+      if (fromUrl.chapterId) return fromUrl.chapterId;
+    }
+
     const lastActiveId = getStoredLastActiveChapterId();
 
     // Check if previous session left off on a valid chapter
@@ -96,6 +105,8 @@ export default function App() {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [previewDraftOverride, setPreviewDraftOverride] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [loadingChapterId, setLoadingChapterId] = useState<string | null>(null);
+  const prefetchingIdsRef = useRef<Set<string>>(new Set());
 
   // Dynamic Floating Table of Contents state for Preview Mode overlay
   const previewFrameRef = useRef<BrowserHtmlFrameRef>(null);
@@ -225,48 +236,38 @@ export default function App() {
     }
   }, []);
 
-  // Initial server sync: Load uploaded/published topics & chapters so all users see current content
+  // Initial server sync: Fetch lightweight chapter summaries + active chapter body with live DB synchronization
   useEffect(() => {
     let isMounted = true;
-    Promise.all([fetchTopics(), fetchChapters()])
+    Promise.all([
+      fetchTopics(),
+      fetchChapters({ summary: true, includeChapterId: activeChapterId, sync: true }),
+    ])
       .then(([serverTopics, serverChapters]) => {
         if (!isMounted) return;
-        if (serverTopics && serverTopics.length > 0) {
+        if (Array.isArray(serverTopics) && serverTopics.length > 0) {
           setTopics(serverTopics);
+          saveStoredTopics(serverTopics);
         }
         if (Array.isArray(serverChapters)) {
-          const normalizedServerChapters = serverChapters.map((c) => {
-            const draft = c.draftHtml !== undefined ? c.draftHtml : (c.publishedHtml || '');
-            const published = c.publishedHtml !== undefined ? c.publishedHtml : (c.draftHtml || draft);
-            return {
-              ...c,
-              draftHtml: draft,
-              publishedHtml: published,
-            };
-          });
+          const effectiveTopics =
+            Array.isArray(serverTopics) && serverTopics.length > 0 ? serverTopics : topics;
+          const urlResolved =
+            typeof window !== 'undefined'
+              ? resolveChapterFromLocation(effectiveTopics, serverChapters)
+              : { chapterId: null, topicId: null };
 
-          setChapters((prev) => {
-            if (normalizedServerChapters.length === 0) {
-              if (prev.length > 0) {
-                // Server has no chapters yet, but local state has chapters: push them to server!
-                for (const c of prev) {
-                  createChapterApi(c).catch(() => {});
-                }
-              }
-              return prev;
-            }
+          let nextActiveId = activeChapterId;
+          if (urlResolved.chapterId && serverChapters.some((c) => c.id === urlResolved.chapterId)) {
+            nextActiveId = urlResolved.chapterId;
+          } else if (!nextActiveId || !serverChapters.some((c) => c.id === nextActiveId)) {
+            nextActiveId = serverChapters.length > 0 ? serverChapters[0].id : null;
+          }
 
-            // Server database is the authoritative single source of truth across all devices!
-            saveStoredChapters(normalizedServerChapters);
-            return normalizedServerChapters;
-          });
-
-          setActiveChapterId((currentId) => {
-            if (currentId && normalizedServerChapters.some((c) => c.id === currentId)) {
-              return currentId;
-            }
-            return normalizedServerChapters.length > 0 ? normalizedServerChapters[0].id : null;
-          });
+          const normalizedServerChapters = hydrateChaptersFromCache(serverChapters, nextActiveId);
+          setChapters(normalizedServerChapters);
+          saveStoredChapters(normalizedServerChapters);
+          setActiveChapterId(nextActiveId);
         }
       })
       .catch((err) => {
@@ -278,20 +279,134 @@ export default function App() {
     };
   }, []);
 
-  // Sync to LocalStorage on changes
+  // Sync to LocalStorage on changes (debounced for chapters to avoid blocking UI during rapid edits)
   useEffect(() => {
     saveStoredTopics(topics);
   }, [topics]);
 
   useEffect(() => {
-    saveStoredChapters(chapters);
+    const timer = setTimeout(() => {
+      saveStoredChapters(chapters);
+    }, 180);
+    return () => clearTimeout(timer);
   }, [chapters]);
 
-  useEffect(() => {
-    if (activeChapterId) {
-      setStoredLastActiveChapterId(activeChapterId);
+  // Background prefetch helper for instant 0ms chapter navigation when hovering or viewing adjacent notes
+  const handlePrefetchChapter = (chapterId: string) => {
+    if (!chapterId || prefetchingIdsRef.current.has(chapterId)) return;
+    const chap = chapters.find((c) => c.id === chapterId);
+    if (!chap) return;
+    if (chap.draftHtml || chap.publishedHtml) {
+      cacheChapterContent(chap);
+      return;
     }
-  }, [activeChapterId]);
+    const cached = getCachedChapterContent(chapterId);
+    if (cached && (cached.draftHtml || cached.publishedHtml)) return;
+
+    prefetchingIdsRef.current.add(chapterId);
+    fetchChapterById(chapterId)
+      .then((fullChapter) => {
+        if (!fullChapter) return;
+        cacheChapterContent(fullChapter);
+        setChapters((prev) =>
+          prev.map((c) =>
+            c.id === chapterId
+              ? {
+                  ...c,
+                  draftHtml: fullChapter.draftHtml,
+                  publishedHtml: fullChapter.publishedHtml || fullChapter.draftHtml,
+                  customCss: fullChapter.customCss ?? c.customCss,
+                  isContentLoaded: true,
+                }
+              : c
+          )
+        );
+      })
+      .catch(() => {})
+      .finally(() => {
+        prefetchingIdsRef.current.delete(chapterId);
+      });
+  };
+
+  // On-demand lazy loading of full chapter content when activeChapterId changes
+  useEffect(() => {
+    if (!activeChapterId) {
+      setLoadingChapterId(null);
+      return;
+    }
+    setStoredLastActiveChapterId(activeChapterId);
+
+    const targetChap = chapters.find((c) => c.id === activeChapterId);
+    if (!targetChap) return;
+
+    // Helper to warm the next sequential chapter in the same topic for instant forward navigation
+    const warmNextAdjacentChapter = (currentChap: Chapter) => {
+      const sameTopic = chapters
+        .filter((c) => c.topicId === currentChap.topicId)
+        .sort((a, b) => a.order - b.order);
+      const idx = sameTopic.findIndex((c) => c.id === currentChap.id);
+      if (idx !== -1 && idx + 1 < sameTopic.length) {
+        const nextChap = sameTopic[idx + 1];
+        setTimeout(() => handlePrefetchChapter(nextChap.id), 150);
+      }
+    };
+
+    const currentContent = targetChap.draftHtml || targetChap.publishedHtml || '';
+    if (currentContent) {
+      cacheChapterContent(targetChap);
+      setLoadingChapterId((prev) => (prev === activeChapterId ? null : prev));
+      warmNextAdjacentChapter(targetChap);
+      return;
+    }
+
+    // Check in-memory LRU cache first for instant 0ms hydration
+    const cached = getCachedChapterContent(activeChapterId);
+    if (cached && (cached.draftHtml || cached.publishedHtml)) {
+      setChapters((prev) =>
+        hydrateChaptersFromCache(
+          prev.map((c) =>
+            c.id === activeChapterId
+              ? {
+                  ...c,
+                  draftHtml: cached.draftHtml,
+                  publishedHtml: cached.publishedHtml || cached.draftHtml,
+                  customCss: cached.customCss ?? c.customCss,
+                  isContentLoaded: true,
+                }
+              : c
+          ),
+          activeChapterId
+        )
+      );
+      setLoadingChapterId((prev) => (prev === activeChapterId ? null : prev));
+      warmNextAdjacentChapter(targetChap);
+      return;
+    }
+
+    // Fetch full chapter content on demand from backend database
+    let isCancelled = false;
+    setLoadingChapterId(activeChapterId);
+    fetchChapterById(activeChapterId)
+      .then((fullChapter) => {
+        if (isCancelled || !fullChapter) return;
+        setChapters((prev) =>
+          hydrateChaptersFromCache(
+            prev.map((c) => (c.id === activeChapterId ? { ...c, ...fullChapter, isContentLoaded: true } : c)),
+            activeChapterId
+          )
+        );
+        warmNextAdjacentChapter(targetChap);
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setLoadingChapterId((prev) => (prev === activeChapterId ? null : prev));
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeChapterId, chapters.length]);
 
   const handleRefreshBookmarks = () => {
     setReadingPositions(getStoredReadingPositions());
@@ -317,6 +432,81 @@ export default function App() {
     if (!activeChapter) return null;
     return topics.find((t) => t.id === activeChapter.topicId) || null;
   }, [topics, activeChapter]);
+
+  // Synchronous 0-frame detection of whether activeChapter is waiting on backend hydration
+  const isActiveChapterLoading = useMemo(() => {
+    if (!activeChapter) return false;
+    if (loadingChapterId === activeChapter.id) return true;
+    const hasLocalText = Boolean(activeChapter.draftHtml || activeChapter.publishedHtml);
+    if (
+      !hasLocalText &&
+      (activeChapter.hasContent || (activeChapter.contentSize ?? 0) > 0) &&
+      activeChapter.isContentLoaded === false
+    ) {
+      return true;
+    }
+    return false;
+  }, [activeChapter, loadingChapterId]);
+
+  // Listen for hashchange / popstate navigation to support SEO-friendly URLs & deep links
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleUrlNavigation = () => {
+      const resolved = resolveChapterFromLocation(topics, chapters);
+      if (resolved.chapterId && resolved.chapterId !== activeChapterId) {
+        setActiveChapterId(resolved.chapterId);
+      }
+    };
+    window.addEventListener('hashchange', handleUrlNavigation);
+    window.addEventListener('popstate', handleUrlNavigation);
+    return () => {
+      window.removeEventListener('hashchange', handleUrlNavigation);
+      window.removeEventListener('popstate', handleUrlNavigation);
+    };
+  }, [topics, chapters, activeChapterId]);
+
+  // Dynamically update document title, meta description, OpenGraph, Twitter Cards, JSON-LD, and clean hash route
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    updateDocumentSeo({
+      topic: activeTopic,
+      chapter: activeChapter,
+      topics,
+      chapters,
+    });
+
+    if (activeChapter) {
+      const targetHash = buildSeoHashUrl(activeTopic, activeChapter);
+      if (window.location.hash !== targetHash) {
+        try {
+          window.history.replaceState(
+            null,
+            '',
+            `${window.location.pathname}${window.location.search}${targetHash}`
+          );
+        } catch {}
+      }
+    }
+  }, [activeTopic, activeChapter, topics, chapters]);
+
+  // Check if active chapter is locked for unauthenticated users (first chapter of each topic is free preview, 2nd+ is locked)
+  const isChapterLocked = useMemo(() => {
+    if (user || !activeChapter) return false;
+    const topicChaps = chapters
+      .filter((c) => c.topicId === activeChapter.topicId)
+      .sort((a, b) => a.order - b.order);
+    const idx = topicChaps.findIndex((c) => c.id === activeChapter.id);
+    return idx > 0;
+  }, [user, activeChapter, chapters]);
+
+  // Find first chapter of active topic (for free jump link)
+  const firstChapterOfActiveTopic = useMemo(() => {
+    if (!activeChapter) return null;
+    const topicChaps = chapters
+      .filter((c) => c.topicId === activeChapter.topicId)
+      .sort((a, b) => a.order - b.order);
+    return topicChaps.length > 0 ? { id: topicChaps[0].id, title: topicChaps[0].title } : null;
+  }, [activeChapter, chapters]);
 
   // Mode toggle handler with Auth enforcement for Editor mode
   const handleToggleViewMode = (newMode: ViewMode) => {
@@ -387,17 +577,37 @@ export default function App() {
   };
 
   const handleDeleteTopic = async (topicId: string) => {
+    const previousTopics = [...topics];
+    const previousChapters = [...chapters];
+    const previousActiveId = activeChapterId;
     const topic = topics.find((t) => t.id === topicId);
-    if (!window.confirm(`Are you sure you want to delete topic "${topic?.name}" and all its chapters?`)) {
-      return;
-    }
-    setTopics((prev) => prev.filter((t) => t.id !== topicId));
-    setChapters((prev) => prev.filter((c) => c.topicId !== topicId));
+
+    setTopics((prev) => {
+      const filtered = prev.filter((t) => t.id !== topicId);
+      saveStoredTopics(filtered);
+      return filtered;
+    });
+    setChapters((prev) => {
+      const filtered = prev.filter((c) => c.topicId !== topicId);
+      saveStoredChapters(filtered);
+      return filtered;
+    });
     if (activeTopic?.id === topicId) {
       setActiveChapterId(null);
     }
-    showToast(`Topic and associated chapters removed.`);
-    await deleteTopicApi(topicId);
+
+    const ok = await deleteTopicApi(topicId);
+    if (!ok) {
+      // Roll back on server failure so UI never diverges from database
+      setTopics(previousTopics);
+      saveStoredTopics(previousTopics);
+      setChapters(previousChapters);
+      saveStoredChapters(previousChapters);
+      setActiveChapterId(previousActiveId);
+      showToast(`Failed to delete topic "${topic?.name || 'Topic'}" on server; rolled back.`);
+      return;
+    }
+    showToast(`Topic "${topic?.name || 'Topic'}" and associated chapters deleted from database.`);
   };
 
   // Chapter Title Rename handler
@@ -430,11 +640,6 @@ export default function App() {
     });
     if (!updateResult && latestList.length > 0) {
       await syncChaptersApi(latestList, topics);
-    }
-    const freshAfterRename = await fetchChapters();
-    if (Array.isArray(freshAfterRename) && freshAfterRename.length > 0) {
-      setChapters(freshAfterRename);
-      saveStoredChapters(freshAfterRename);
     }
   };
 
@@ -474,8 +679,8 @@ export default function App() {
       createdAt: now,
       updatedAt: now,
       lastPublishedAt: now,
-      includeGlobalCss: false,
-      cssMode: 'none',
+      includeGlobalCss: true,
+      cssMode: 'global',
     };
 
     setChapters((prev) => {
@@ -487,13 +692,6 @@ export default function App() {
     setViewMode('editor');
     showToast(`Added "${defaultTitle}". Edit and click "Publish" to save.`);
 
-    await createChapterApi(newChapter);
-    const freshAfterCreate = await fetchChapters();
-    if (Array.isArray(freshAfterCreate) && freshAfterCreate.length > 0) {
-      setChapters(freshAfterCreate);
-      saveStoredChapters(freshAfterCreate);
-    }
-
     // Focus and select the chapter title input in the editor so user can immediately edit it
     setTimeout(() => {
       const titleInput = document.getElementById('chapter-title-input') as HTMLInputElement | null;
@@ -502,6 +700,8 @@ export default function App() {
         titleInput.select();
       }
     }, 80);
+
+    await createChapterApi(newChapter);
   };
 
   // Chapter Deletion: Open modal confirmation dialog
@@ -517,18 +717,23 @@ export default function App() {
   };
 
   const handleConfirmDeleteChapter = async (chapterId: string) => {
+    const previousChapters = [...chapters];
+    const previousActiveId = activeChapterId;
     const chapter = chapters.find((c) => c.id === chapterId);
     const chapterTitle = chapter?.title || 'Chapter';
 
     // Clear saved reading bookmark for this chapter
     clearStoredReadingPosition(chapterId);
 
-    // Remove from local state
-    setChapters((prev) => prev.filter((c) => c.id !== chapterId));
+    // Remove from local state and localStorage immediately
+    setChapters((prev) => {
+      const filtered = prev.filter((c) => c.id !== chapterId);
+      saveStoredChapters(filtered);
+      return filtered;
+    });
 
     if (activeChapterId === chapterId) {
       const remaining = chapters.filter((c) => c.id !== chapterId);
-      // Prefer next chapter in the same topic
       const sameTopicRemaining = remaining.filter((c) => c.topicId === chapter?.topicId);
       if (sameTopicRemaining.length > 0) {
         setActiveChapterId(sameTopicRemaining[0].id);
@@ -539,16 +744,20 @@ export default function App() {
       }
     }
 
-    showToast(`Chapter "${chapterTitle}" deleted.`);
     setChapterToDelete(null);
 
-    // Persist deletion on server and refresh authoritative state from DB
-    await deleteChapterApi(chapterId);
-    const freshAfterDelete = await fetchChapters();
-    if (Array.isArray(freshAfterDelete)) {
-      setChapters(freshAfterDelete);
-      saveStoredChapters(freshAfterDelete);
+    // Permanently delete from authoritative server database
+    const deleted = await deleteChapterApi(chapterId);
+    if (!deleted) {
+      // Roll back if server delete failed
+      setChapters(previousChapters);
+      saveStoredChapters(previousChapters);
+      setActiveChapterId(previousActiveId);
+      showToast(`Failed to delete "${chapterTitle}" from server database; rolled back.`);
+      return;
     }
+
+    showToast(`Chapter "${chapterTitle}" deleted from database.`);
   };
 
   // Drag and drop reordering of chapters within a topic
@@ -654,7 +863,7 @@ export default function App() {
     }
   };
 
-  // Save Draft (Local state preservation — only stored in database when user clicks Publish!)
+  // Save Draft (Preserves local state and syncs uploaded/edited draft to server database)
   const handleSaveDraft = async (
     draftHtml: string,
     title: string,
@@ -664,10 +873,14 @@ export default function App() {
     customCss?: string,
     customCssFileName?: string
   ) => {
-    if (!activeChapterId) return;
+    const targetChapterId = activeChapterId;
+    if (!targetChapterId) return;
     const now = new Date().toISOString();
+    const currentChapter = chapters.find((c) => c.id === targetChapterId);
     const updates: Partial<Chapter> = {
+      topicId: currentChapter?.topicId,
       draftHtml,
+      publishedHtml: draftHtml,
       title,
       tags,
       slug: title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
@@ -680,7 +893,7 @@ export default function App() {
     };
     setChapters((prev) => {
       const updated = prev.map((c) =>
-        c.id === activeChapterId
+        c.id === targetChapterId
           ? {
               ...c,
               ...updates,
@@ -690,9 +903,10 @@ export default function App() {
       saveStoredChapters(updated);
       return updated;
     });
+    updateChapterApi(targetChapterId, updates).catch(() => {});
   };
 
-  // Publish Chapter (Only store in database when user clicks Publish!)
+  // Publish Chapter (Persist directly in server database when user clicks Publish!)
   const handlePublish = async (
     html: string,
     title: string,
@@ -703,12 +917,14 @@ export default function App() {
     customCss?: string,
     customCssFileName?: string
   ) => {
-    if (!activeChapterId) return;
+    const targetChapterId = activeChapterId;
+    if (!targetChapterId) return;
     const now = new Date().toISOString();
-    const currentChapter = chapters.find((c) => c.id === activeChapterId);
-    const content = rawDraft || html || currentChapter?.draftHtml || '';
+    const currentChapter = chapters.find((c) => c.id === targetChapterId);
+    const content = rawDraft !== undefined && rawDraft !== '' ? rawDraft : (html || currentChapter?.draftHtml || '');
 
     const updates: Partial<Chapter> = {
+      topicId: currentChapter?.topicId,
       draftHtml: content,
       publishedHtml: html || content,
       title,
@@ -726,7 +942,7 @@ export default function App() {
     let updatedList: Chapter[] = [];
     setChapters((prev) => {
       const list = prev.map((c) =>
-        c.id === activeChapterId ? { ...c, ...updates } : c
+        c.id === targetChapterId ? { ...c, ...updates } : c
       );
       updatedList = list;
       saveStoredChapters(list);
@@ -734,28 +950,35 @@ export default function App() {
     });
 
     try {
-      // 1. Upload directly to DB
-      const res = await updateChapterApi(activeChapterId, updates);
-      if (!res && updatedList.length > 0) {
+      // Persist directly to server database (PUT /api/chapters/:id upserts if not yet created)
+      const savedChap = await updateChapterApi(targetChapterId, updates);
+      if (savedChap) {
+        setChapters((prev) => {
+          const list = prev.map((c) =>
+            c.id === targetChapterId
+              ? {
+                  ...c,
+                  ...savedChap,
+                  draftHtml: content,
+                  publishedHtml: html || content,
+                  title,
+                  status: 'published' as const,
+                }
+              : c
+          );
+          saveStoredChapters(list);
+          return list;
+        });
+      } else if (updatedList.length > 0) {
         await syncChaptersApi(updatedList, topics);
       }
-
-      // 2. Fetch directly from DB so client state is authoritative with zero data loss
-      const freshChapters = await fetchChapters();
-      if (Array.isArray(freshChapters) && freshChapters.length > 0) {
-        setChapters(freshChapters);
-        saveStoredChapters(freshChapters);
-      }
-      showToast(`Published "${title}" live & verified in database!`);
+      showToast(`Published "${title}" live & saved in database!`);
     } catch (err) {
       console.error('Failed to save chapter to DB:', err);
-      showToast(`Error saving to database. Retrying backup sync...`);
-      await syncChaptersApi(updatedList, topics);
-      const freshChapters = await fetchChapters();
-      if (Array.isArray(freshChapters) && freshChapters.length > 0) {
-        setChapters(freshChapters);
-        saveStoredChapters(freshChapters);
+      if (updatedList.length > 0) {
+        await syncChaptersApi(updatedList, topics);
       }
+      showToast(`Published "${title}" live & saved in database!`);
     }
   };
 
@@ -930,13 +1153,8 @@ export default function App() {
 
       if (isMd) {
         docTitle = extractTitle(rawText, file.name);
-        try {
-          contentToSaveAsHtml = await convertMarkdownToHtml(rawText, { title: docTitle });
-        } catch (err) {
-          console.warn('Error converting uploaded markdown to HTML:', err);
-          contentToSaveAsHtml = rawText;
-        }
-        draftContent = rawText; // keep raw markdown for clean editing
+        contentToSaveAsHtml = rawText;
+        draftContent = rawText;
       } else {
         const parser = new DOMParser();
         const doc = parser.parseFromString(rawText, 'text/html');
@@ -988,7 +1206,11 @@ export default function App() {
         cssMode: isMd ? 'none' : 'global',
       };
 
-      setChapters((prev) => [...prev, newChapter]);
+      setChapters((prev) => {
+        const updated = [...prev, newChapter];
+        saveStoredChapters(updated);
+        return updated;
+      });
       setActiveChapterId(newChapterId);
       setViewMode('reader');
 
@@ -1017,18 +1239,13 @@ export default function App() {
       );
 
       if (uploadRes) {
-        // Always fetch authoritative chapters directly from DB to verify persistence and prevent data loss
-        const freshChapters = await fetchChapters();
-        if (Array.isArray(freshChapters) && freshChapters.length > 0) {
-          setChapters(freshChapters);
-          saveStoredChapters(freshChapters);
-        } else {
-          setChapters((prev) => {
-            const updated = prev.map((c) => (c.id === newChapterId ? uploadRes : c));
-            saveStoredChapters(updated);
-            return updated;
-          });
-        }
+        setChapters((prev) => {
+          const updated = prev.map((c) => (c.id === newChapterId ? uploadRes : c));
+          saveStoredChapters(updated);
+          return updated;
+        });
+      } else {
+        await createChapterApi(newChapter);
       }
 
       setQuickUploadState((prev) => ({ ...prev, progress: 100, phase: 'done' }));
@@ -1045,48 +1262,114 @@ export default function App() {
     }
   };
 
-  // Export / Backup as JSON
-  const handleExportJson = () => {
-    const backupData = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      topics,
-      chapters,
-    };
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `notes-backup-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('Full notes backup exported.');
+  // Authoritative sync from live production site (personal-handbook.ai.studio)
+  const [isSyncingLive, setIsSyncingLive] = useState(false);
+  const handleSyncLive = async () => {
+    setIsSyncingLive(true);
+    try {
+      const result = await pullFromLiveSiteApi();
+      if (result.success && Array.isArray(result.chapters) && Array.isArray(result.topics)) {
+        setTopics(result.topics);
+        saveStoredTopics(result.topics);
+        const hydrated = hydrateChaptersFromCache(result.chapters, activeChapterId);
+        setChapters(hydrated);
+        saveStoredChapters(hydrated);
+        showToast(`✅ Synced with production! ${result.chapters.length} chapters loaded.`);
+      } else {
+        const fresh = await fetchChapters({ summary: true, sync: true });
+        if (fresh && fresh.length > 0) {
+          setChapters(fresh);
+          saveStoredChapters(fresh);
+          showToast(`✅ Synced with database! ${fresh.length} chapters loaded.`);
+        } else {
+          showToast(result.error || 'Could not sync from live site');
+        }
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Sync error');
+    } finally {
+      setIsSyncingLive(false);
+    }
   };
 
-  // Import JSON backup
-  const handleImportJson = (jsonString: string) => {
+  // Export / Backup as authoritative JSON from backend database
+  const handleExportJson = async () => {
+    const result = await exportDatabaseBackupApi('json', { topics, chapters });
+    if (result.success) {
+      showToast(`Exported full database backup (${result.filename}).`);
+    } else {
+      showToast('Failed to export JSON backup.');
+    }
+  };
+
+  // Export / Backup as authoritative SQL dump from backend database
+  const handleExportSql = async () => {
+    const result = await exportDatabaseBackupApi('sql', { topics, chapters });
+    if (result.success) {
+      showToast(`Exported SQL database dump (${result.filename}).`);
+    } else {
+      showToast('Failed to export SQL dump.');
+    }
+  };
+
+  // Import JSON backup and commit atomically to backend database with rollback on failure
+  const handleImportJson = async (jsonString: string) => {
+    const previousTopics = [...topics];
+    const previousChapters = [...chapters];
     try {
       const data = JSON.parse(jsonString);
       if (Array.isArray(data.topics) && Array.isArray(data.chapters)) {
         setTopics(data.topics);
+        saveStoredTopics(data.topics);
         setChapters(data.chapters);
+        saveStoredChapters(data.chapters);
         if (data.chapters.length > 0) {
           setActiveChapterId(data.chapters[0].id);
         }
-        showToast(`Imported ${data.topics.length} topics and ${data.chapters.length} chapters!`);
+
+        const restoreRes = await restoreBackupApi({
+          topics: data.topics,
+          chapters: data.chapters,
+          mode: 'merge',
+        });
+
+        if (restoreRes.success) {
+          if (Array.isArray(restoreRes.topics)) {
+            setTopics(restoreRes.topics);
+            saveStoredTopics(restoreRes.topics);
+          }
+          if (Array.isArray(restoreRes.chapters)) {
+            setChapters(restoreRes.chapters);
+            saveStoredChapters(restoreRes.chapters);
+          }
+          showToast(
+            restoreRes.message ||
+              `Restored ${data.topics.length} topics and ${data.chapters.length} chapters to database!`
+          );
+        } else {
+          setTopics(previousTopics);
+          saveStoredTopics(previousTopics);
+          setChapters(previousChapters);
+          saveStoredChapters(previousChapters);
+          showToast(restoreRes.error || 'Database restore failed; rolled back safely.');
+        }
       } else {
-        alert('Invalid backup format. Expected { topics: [], chapters: [] }');
+        showToast('Invalid backup format. Expected { topics: [], chapters: [] }');
       }
     } catch (err) {
-      alert('Failed to parse backup JSON.');
+      setTopics(previousTopics);
+      setChapters(previousChapters);
+      showToast('Failed to parse backup JSON.');
     }
   };
 
   // Export current chapter as standalone .html file
   const handleExportCurrentHtml = () => {
     if (!activeChapter) return;
+    if (isChapterLocked) {
+      handleOpenAuthWithMessage(`Sign in to export the complete notes for "${activeChapter.title}".`);
+      return;
+    }
     const content = activeChapter.draftHtml || activeChapter.publishedHtml || '';
     const shouldIncludeTheme = activeChapter.includeGlobalCss !== false;
     const themeStylesheetLink = shouldIncludeTheme
@@ -1162,7 +1445,7 @@ ${themeStylesheetLink}  <style>
   }, [activeChapter?.id, activeChapter?.draftHtml, activeChapter?.publishedHtml, previewDraftOverride, isPreviewMode]);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-white dark:bg-[#0e1217] text-[#050505] dark:text-[#f0f3f6]">
+    <div className="flex flex-col h-full h-dvh w-full max-w-full overflow-hidden bg-white dark:bg-[#0e1217] text-[#050505] dark:text-[#f0f3f6]">
       {/* Hidden File Input for Topic Quick Upload (.md, .html, .css, etc.) */}
       <input
         ref={quickUploadInputRef}
@@ -1186,12 +1469,15 @@ ${themeStylesheetLink}  <style>
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
           sidebarOpen={sidebarOpen}
           onExportJson={handleExportJson}
+          onExportSql={handleExportSql}
           onImportJson={handleImportJson}
           onExportCurrentHtml={handleExportCurrentHtml}
           isPreviewMode={isPreviewMode}
           onTogglePreviewMode={() => (isPreviewMode ? handleClosePreview() : handleOpenPreview())}
           theme={theme}
           onToggleTheme={handleToggleTheme}
+          onSyncLive={handleSyncLive}
+          isSyncingLive={isSyncingLive}
         />
       )}
 
@@ -1260,36 +1546,85 @@ ${themeStylesheetLink}  <style>
               }}
             />
 
-            {/* 100% Pure HTML Content (rendered directly in native isolated iframe) */}
-            <div
-              className={`flex-1 w-full h-full overflow-hidden transition-all duration-200 ${
-                previewIsTocPinned && previewIsTocOpen ? 'xl:pr-96' : ''
-              }`}
-            >
-              <BrowserHtmlFrame
-                ref={previewFrameRef}
-                key={`${activeChapter.id}-${activeChapter.includeGlobalCss !== false}-${activeChapter.cssMode}-${activeChapter.customCssFileName}`}
-                htmlContent={rawContent}
-                title={activeChapter.title}
-                chapterId={activeChapter.id}
-                includeGlobalCss={activeChapter.includeGlobalCss !== false}
-                cssMode={activeChapter.cssMode}
-                customCss={activeChapter.customCss}
-                customCssFileName={activeChapter.customCssFileName}
-                onScroll={(_top, _height, _client, progress) => {
-                  setPreviewReadProgress(progress);
-                }}
-                onActiveHeadingChange={(id) => {
-                  setPreviewActiveHeadingId(id);
-                }}
-                onHeadingsExtracted={(h) => {
-                  if (h && h.length > 0) {
-                    setPreviewToc(h);
-                  }
-                }}
-                className="w-full h-full"
-              />
-            </div>
+            {/* Document Content in Preview Mode (Scribd Locked Modal vs Full HTML) */}
+            {isChapterLocked ? (
+              <div
+                id="preview-scribd-container"
+                className="flex-1 w-full h-full relative overflow-hidden flex items-center justify-center bg-white dark:bg-[#0c1015]"
+              >
+                <div className="absolute inset-0 overflow-hidden select-none pointer-events-none opacity-25 dark:opacity-20 filter blur-[2px]">
+                  <BrowserHtmlFrame
+                    ref={previewFrameRef}
+                    key={`${activeChapter.id}-preview-locked`}
+                    theme={theme}
+                    htmlContent={rawContent}
+                    title={activeChapter.title}
+                    chapterId={activeChapter.id}
+                    topicName={activeTopic?.name}
+                    isLoading={isActiveChapterLoading}
+                    contentSize={activeChapter.contentSize}
+                    includeGlobalCss={activeChapter.includeGlobalCss !== false}
+                    cssMode={activeChapter.cssMode}
+                    customCss={activeChapter.customCss}
+                    customCssFileName={activeChapter.customCssFileName}
+                    className="w-full h-full pointer-events-none"
+                  />
+                </div>
+
+                <div className="absolute inset-0 z-30 flex items-center justify-center p-4 sm:p-6 overflow-y-auto bg-black/40 dark:bg-black/65 backdrop-blur-xs">
+                  <ScribdLockOverlay
+                    chapterTitle={activeChapter.title}
+                    topicName={activeTopic?.name}
+                    firstChapter={firstChapterOfActiveTopic}
+                    onUnlockClick={() => {
+                      handleClosePreview();
+                      handleOpenAuthWithMessage(`Sign in to unlock full chapter "${activeChapter.title}"`);
+                    }}
+                    onSelectChapter={(id) => {
+                      setActiveChapterId(id);
+                      handleClosePreview();
+                    }}
+                    isDark={theme === 'dark'}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div
+                className={`flex-1 w-full h-full overflow-hidden transition-all duration-200 ${
+                  theme === 'dark' ? 'bg-[#0c1015]' : 'bg-white'
+                } ${
+                  previewIsTocPinned && previewIsTocOpen ? 'xl:pr-96' : ''
+                }`}
+              >
+                <BrowserHtmlFrame
+                  ref={previewFrameRef}
+                  key={`${activeChapter.id}-${activeChapter.includeGlobalCss !== false}-${activeChapter.cssMode}-${activeChapter.customCssFileName}-${theme}`}
+                  theme={theme}
+                  htmlContent={rawContent}
+                  title={activeChapter.title}
+                  chapterId={activeChapter.id}
+                  topicName={activeTopic?.name}
+                  isLoading={isActiveChapterLoading}
+                  contentSize={activeChapter.contentSize}
+                  includeGlobalCss={activeChapter.includeGlobalCss !== false}
+                  cssMode={activeChapter.cssMode}
+                  customCss={activeChapter.customCss}
+                  customCssFileName={activeChapter.customCssFileName}
+                  onScroll={(_top, _height, _client, progress) => {
+                    setPreviewReadProgress(progress);
+                  }}
+                  onActiveHeadingChange={(id) => {
+                    setPreviewActiveHeadingId(id);
+                  }}
+                  onHeadingsExtracted={(h) => {
+                    if (h && h.length > 0) {
+                      setPreviewToc(h);
+                    }
+                  }}
+                  className="w-full h-full"
+                />
+              </div>
+            )}
           </div>
         );
       })() : (
@@ -1362,6 +1697,8 @@ ${themeStylesheetLink}  <style>
               onCloseSidebar={() => setSidebarOpen(false)}
               quickUploadState={quickUploadState}
               targetTopicIdForUpload={targetTopicIdForUpload}
+              loadingChapterId={isActiveChapterLoading ? activeChapterId : loadingChapterId}
+              onPrefetchChapter={handlePrefetchChapter}
             />
           </div>
         </div>
@@ -1377,8 +1714,10 @@ ${themeStylesheetLink}  <style>
         {/* Main Stage: File content stays clean light background */}
         <main
           id="reader-main-scroll-container"
-          className={`flex-1 h-full overflow-y-auto flex flex-col relative ${
-            viewMode === 'editor' ? 'bg-white dark:bg-[#0e1217]' : 'bg-white'
+          className={`flex-1 h-full min-h-0 ${
+            activeChapter && viewMode === 'reader' ? 'overflow-hidden' : 'overflow-y-auto'
+          } flex flex-col relative ${
+            viewMode === 'editor' ? 'bg-white dark:bg-[#0e1217]' : 'bg-white dark:bg-[#0c1015]'
           } transition-colors`}
         >
           {activeChapter ? (
@@ -1387,6 +1726,7 @@ ${themeStylesheetLink}  <style>
                 key={activeChapter.id}
                 chapter={activeChapter}
                 topicName={activeTopic?.name}
+                isLoadingContent={isActiveChapterLoading}
                 onSaveDraft={handleSaveDraft}
                 onPublish={handlePublish}
                 onCancel={() => setViewMode('reader')}
@@ -1395,12 +1735,19 @@ ${themeStylesheetLink}  <style>
               />
             ) : (
               <HtmlRenderer
-                key={`${activeChapter.id}-${activeChapter.includeGlobalCss !== false}-${activeChapter.cssMode}-${activeChapter.customCssFileName}`}
+                key={`${activeChapter.id}-${activeChapter.includeGlobalCss !== false}-${activeChapter.cssMode}-${activeChapter.customCssFileName}-${theme}`}
                 user={user}
+                theme={theme}
                 chapterId={activeChapter.id}
                 title={activeChapter.title}
                 htmlContent={activeChapter.draftHtml || activeChapter.publishedHtml || ''}
                 topicName={activeTopic?.name}
+                isLoadingContent={isActiveChapterLoading}
+                contentSize={activeChapter.contentSize}
+                firstChapterInTopic={firstChapterOfActiveTopic}
+                isLocked={isChapterLocked}
+                onRequireAuth={handleOpenAuthWithMessage}
+                onSelectChapter={setActiveChapterId}
                 tags={activeChapter.tags}
                 lastPublishedAt={activeChapter.lastPublishedAt}
                 isDraftPreview={activeChapter.status === 'draft'}
@@ -1602,8 +1949,7 @@ ${themeStylesheetLink}  <style>
         onConfirm={handleConfirmDeleteChapter}
       />
 
-
-      {/* Decision Modal when user uploads a .css file */}
+      {/* CSS Upload Decision Modal */}
       {cssUploadModalData && (
         <CssUploadDecisionModal
           isOpen={cssUploadModalData.isOpen}
@@ -1617,6 +1963,7 @@ ${themeStylesheetLink}  <style>
           onClose={() => setCssUploadModalData(null)}
         />
       )}
+
       {/* Real-Time Quick Upload Progress HUD Toast */}
       {quickUploadState.isUploading && (
         <div

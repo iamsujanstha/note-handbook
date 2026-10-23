@@ -18,6 +18,10 @@ export interface Chapter {
   cssMode?: ChapterCssMode;
   customCss?: string;
   customCssFileName?: string;
+  hasContent?: boolean;
+  contentSize?: number;
+  excerpt?: string;
+  isContentLoaded?: boolean;
 }
 
 export interface CustomCssFileInfo {
@@ -39,10 +43,18 @@ export interface Topic {
   updatedAt: string;
 }
 
+export type AuthRole = 'admin' | 'reader';
+
 export interface User {
   email: string;
   name: string;
-  role: 'admin' | 'reader';
+  role: AuthRole;
+}
+
+export interface AuthState {
+  isAuthenticated: boolean;
+  user: User | null;
+  token: string | null;
 }
 
 export type ViewMode = 'reader' | 'editor';
@@ -59,3 +71,63 @@ export interface ReadingPosition {
   progress: number;
   updatedAt: string;
 }
+
+export interface PaginatedChaptersResponse {
+  chapters: Chapter[];
+  count: number;
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+export interface HealthCheckResponse {
+  status: 'ok' | 'degraded';
+  time: string;
+  uptimeSeconds: number;
+  topicsCount: number;
+  chaptersCount: number;
+  database: {
+    connected: boolean;
+    writable: boolean;
+    path: string;
+    backupAvailable: boolean;
+    lastModifiedAt: string | null;
+  };
+  counts: {
+    topics: number;
+    chapters: number;
+    publishedChapters: number;
+    draftChapters: number;
+    deletedTopicTombstones: number;
+    deletedChapterTombstones: number;
+    customCssFiles: number;
+    snapshots: number;
+  };
+  storage: {
+    dataFileBytes: number;
+    backupFileBytes: number;
+    snapshotsTotalBytes: number;
+    contentCharactersTotal: number;
+    memoryHeapUsedBytes: number;
+    memoryRssBytes: number;
+  };
+  sync: {
+    configured: boolean;
+    liveOrigin: string;
+    mode: 'development' | 'production';
+    lastSyncAt: string | null;
+    lastSyncStatus: 'idle' | 'ok' | 'error';
+  };
+}
+
+export interface SyncStatusResponse {
+  configured: boolean;
+  liveOrigin: string;
+  isDev: boolean;
+  localTopicsCount: number;
+  localChaptersCount: number;
+  lastSyncAt?: string | null;
+  lastSyncStatus?: 'idle' | 'ok' | 'error';
+}
+

@@ -1,6 +1,6 @@
 {
   "name": "Personal Notes CMS",
-  "description": "A personal notes and knowledge base CMS with topic and chapter hierarchies, Markdown (.md) and HTML support, Mermaid diagrams, rich preview, and a draft/publish workflow.",
+  "description": "Explore comprehensive, self-contained technical references, system design patterns, and engineering handbooks.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

@@ -172,29 +172,12 @@ export const FloatingTableOfContents: React.FC<FloatingTableOfContentsProps> = (
 
             {/* Mini Progress Ring/Badge */}
             {readProgress > 0 && (
-              <span className="text-[10.5px] font-mono font-bold text-[#1877f2] dark:text-[#38bdf8] shrink-0 pl-1 border-l border-black/10 dark:border-white/10">
+              <span className="text-[10.5px] font-mono font-bold text-[#1877f2] dark:text-[#38bdf8] shrink-0 pl-1 border-l border-black/10 dark:border-[#242c39]">
                 {readProgress}%
               </span>
             )}
           </button>
 
-          {/* Quick scroll to top button next to closed trigger */}
-          {onScrollToTop && readProgress > 15 && (
-            <button
-              id="floating-toc-quick-top-btn"
-              type="button"
-              onClick={onScrollToTop}
-              className={`p-2.5 rounded-2xl shadow-xl transition-all duration-200 cursor-pointer hover:scale-105 active:scale-95 border backdrop-blur-xl ${
-                isDocDark
-                  ? 'bg-[#121721]/90 text-[#f5f2eb] border-[#242c39] hover:border-[#38bdf8]/50 hover:text-[#38bdf8] shadow-black/40'
-                  : 'bg-white/95 text-[#050505] border-[#ced0d4] hover:border-[#1877f2]/50 hover:text-[#1877f2] shadow-black/10'
-              }`}
-              title="Scroll back to top"
-              aria-label="Scroll back to top"
-            >
-              <ArrowUp className="w-4 h-4" />
-            </button>
-          )}
         </div>
       )}
 
@@ -211,7 +194,7 @@ export const FloatingTableOfContents: React.FC<FloatingTableOfContentsProps> = (
           } ${className}`}
         >
           {/* Header */}
-          <div className="p-3.5 border-b border-black/10 dark:border-white/10 shrink-0 space-y-2.5">
+          <div className="p-3.5 border-b border-black/10 dark:border-[#242c39] shrink-0 space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="w-7 h-7 rounded-xl bg-[#1877f2]/10 text-[#1877f2] flex items-center justify-center shrink-0">
@@ -442,7 +425,7 @@ export const FloatingTableOfContents: React.FC<FloatingTableOfContentsProps> = (
           </div>
 
           {/* Footer Controls: Back to top & Keyboard Hints */}
-          <div className="p-2.5 px-3.5 border-t border-black/10 dark:border-white/10 shrink-0 flex items-center justify-between text-[11px] text-[#65676b] dark:text-[#8b949e]">
+          <div className="p-2.5 px-3.5 border-t border-black/10 dark:border-[#242c39] shrink-0 flex items-center justify-between text-[11px] text-[#65676b] dark:text-[#8b949e]">
             {onScrollToTop ? (
               <button
                 type="button"

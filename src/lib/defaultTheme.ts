@@ -26,7 +26,23 @@ export const DEFAULT_NOTEBOOK_THEME_CSS = `/* ==================================
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+:root.dark,
+[data-theme="dark"],
+html.dark,
+body.dark {
+  --color-canvas-bg: #090d16;
+  --color-paper-bg: #0f172a;
+  --color-paper-line: #1e293b;
+  --color-text-main: #f8fafc;
+  --color-text-muted: #cbd5e1;
+  --color-text-subtle: #94a3b8;
+  --color-primary: #60a5fa;
+  --color-primary-bg: #1e3a8a;
+  --color-accent: #3b82f6;
+  --color-border: #334155;
+}
+
+@media (prefers-color-scheme: dark) {
   :root {
     --color-canvas-bg: #090d16;
     --color-paper-bg: #0f172a;
@@ -352,7 +368,7 @@ li {
   font-family: var(--font-hand);
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .card-box {
     background: #1e293b;
   }
@@ -428,7 +444,7 @@ li {
   background: rgba(241, 245, 249, 0.6);
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .hand-table th {
     background: #1e293b;
     color: #94a3b8;
@@ -542,7 +558,7 @@ li {
   box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.09), 0 4px 10px -2px rgba(0, 0, 0, 0.05);
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .diagram-wrapper {
     background: #0f172a;
     border-color: #334155;
@@ -558,6 +574,8 @@ li {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
+  box-sizing: border-box;
   padding: 12px 18px;
   background: #f8fafc;
   border-bottom: 1.5px solid #e2e8f0;
@@ -565,7 +583,7 @@ li {
   flex-wrap: wrap;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .diagram-header {
     background: #1e293b;
     border-bottom-color: #334155;
@@ -576,6 +594,7 @@ li {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .diagram-icon-badge {
@@ -603,7 +622,7 @@ li {
   line-height: 1.3;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .diagram-wrapper h4,
   .diagram-title {
     color: #f8fafc;
@@ -614,6 +633,7 @@ li {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  margin-left: auto;
   background: #ffffff;
   padding: 3px 6px;
   border-radius: 10px;
@@ -621,7 +641,7 @@ li {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .diagram-toolbar {
     background: #0f172a;
     border-color: #475569;
@@ -651,7 +671,7 @@ li {
   color: #0f172a;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .diagram-btn {
     color: #cbd5e1;
   }
@@ -669,7 +689,7 @@ li {
   position: relative;
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
   width: 100%;
   min-height: 290px;
   height: auto;
@@ -693,7 +713,7 @@ li {
   cursor: grabbing !important;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .mermaid-container,
   .mermaid-view {
     background-color: #0b0f19;
@@ -737,7 +757,7 @@ li {
   transform: translateY(-1px);
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .mermaid-zoom-badge {
     background: rgba(30, 41, 59, 0.9);
     border-color: #475569;
@@ -788,7 +808,7 @@ svg.mermaid-svg .background {
   fill: transparent !important;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .mermaid-container svg,
   .mermaid-view svg,
   svg.mermaid-svg {
@@ -809,7 +829,7 @@ svg.mermaid-svg .background {
   font-family: var(--font-sans, system-ui);
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .diagram-footer {
     background: #1e293b;
     border-top-color: #334155;
@@ -942,7 +962,7 @@ svg.mermaid-svg .background {
   margin: auto !important;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .diagram-wrapper.is-fullscreen,
   .github-mermaid-block.is-fullscreen,
   .mermaid-container.is-fullscreen,
@@ -1003,7 +1023,7 @@ svg.mermaid-svg .background {
   box-shadow: 0 8px 26px rgba(37, 99, 235, 0.12), 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .pipe-node {
     background: #1e293b;
     border-color: #334155;
@@ -1033,7 +1053,7 @@ svg.mermaid-svg .background {
   user-select: none;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .pipe-badge {
     border-color: #0f172a;
     box-shadow: 0 4px 14px rgba(59, 130, 246, 0.45);
@@ -1076,7 +1096,7 @@ svg.mermaid-svg .background {
   line-height: 1.35;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .pipe-info h5 {
     color: #f8fafc;
   }
@@ -1099,7 +1119,7 @@ svg.mermaid-svg .background {
   font-family: var(--font-hand, inherit);
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .pipe-info p {
     color: #cbd5e1;
   }
@@ -1136,7 +1156,7 @@ svg.mermaid-svg .background {
   z-index: 1;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .pipe-arrow::before {
     background: repeating-linear-gradient(
       to bottom,
@@ -1168,7 +1188,7 @@ svg.mermaid-svg .background {
   line-height: 1;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .pipe-arrow::after {
     background: #0f172a;
     border-color: #475569;
@@ -1299,7 +1319,7 @@ svg.mermaid-svg .background {
   line-height: 1.2 !important;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .diagram-wrapper .edgeLabel foreignObject div,
   .diagram-wrapper .edgeLabel span.edgeLabel,
   .diagram-wrapper .edgeLabel .label span {
@@ -1396,7 +1416,7 @@ svg.mermaid-svg .background {
 }
 
 /* Dark Mode Overrides for Diagrams */
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .diagram-wrapper .statediagram-state rect,
   .diagram-wrapper .stateGroup rect,
   .diagram-wrapper .state-node rect,
@@ -1495,16 +1515,68 @@ svg.mermaid-svg .background {
 
   .diagram-wrapper .actor {
     fill: #1e293b !important;
-    stroke: #60a5fa !important;
+    stroke: #38bdf8 !important;
+    stroke-width: 2px !important;
   }
 
+  .diagram-wrapper text.actor,
   .diagram-wrapper text.actor > tspan {
-    fill: #f8fafc !important;
+    fill: #ffffff !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
   }
 
   .diagram-wrapper .messageText {
-    fill: #e2e8f0 !important;
+    fill: #f1f5f9 !important;
   }
+}
+
+/* Explicit class-based dark overrides for sequence diagrams in defaultTheme */
+.dark .diagram-wrapper .actor,
+[data-theme="dark"] .diagram-wrapper .actor,
+.diagram-theme-dark .actor,
+.diagram-theme-dark svg .actor {
+  fill: #1e293b !important;
+  stroke: #38bdf8 !important;
+  stroke-width: 2px !important;
+}
+
+.dark .diagram-wrapper text.actor,
+.dark .diagram-wrapper text.actor > tspan,
+[data-theme="dark"] .diagram-wrapper text.actor,
+[data-theme="dark"] .diagram-wrapper text.actor > tspan,
+.diagram-theme-dark text.actor,
+.diagram-theme-dark text.actor > tspan,
+.diagram-theme-dark svg text.actor,
+.diagram-theme-dark svg text.actor > tspan {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+.dark .diagram-wrapper .messageText,
+[data-theme="dark"] .diagram-wrapper .messageText,
+.diagram-theme-dark .messageText,
+.diagram-theme-dark svg .messageText {
+  fill: #f1f5f9 !important;
+  color: #f1f5f9 !important;
+}
+
+.dark .diagram-wrapper .note,
+[data-theme="dark"] .diagram-wrapper .note,
+.diagram-theme-dark .note {
+  fill: #292524 !important;
+  stroke: #ca8a04 !important;
+}
+
+.dark .diagram-wrapper .noteText,
+.dark .diagram-wrapper .noteText > tspan,
+[data-theme="dark"] .diagram-wrapper .noteText,
+[data-theme="dark"] .diagram-wrapper .noteText > tspan,
+.diagram-theme-dark .noteText,
+.diagram-theme-dark .noteText > tspan {
+  fill: #fef08a !important;
+  color: #fef08a !important;
 }
 
 /* Q&A Interview Boxes */
@@ -1518,7 +1590,7 @@ svg.mermaid-svg .background {
   font-family: var(--font-hand);
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .qa-box {
     background: #1e293b;
   }
@@ -1534,7 +1606,7 @@ svg.mermaid-svg .background {
   font-family: var(--font-hand);
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   .qa-question {
     background: #0f172a;
   }
@@ -1587,7 +1659,7 @@ pre code {
   padding: 0;
 }
 
-@media (prefers-color-scheme: dark-disabled-for-notes) {
+@media (prefers-color-scheme: dark) {
   code, .mono {
     background: #1e293b;
     color: #e2e8f0;

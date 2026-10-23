@@ -1,4 +1,4 @@
-import { Topic, Chapter, User } from '../types';
+import { Topic, Chapter, User, HealthCheckResponse, SyncStatusResponse } from '../types';
 import {
   getStoredTopics,
   saveStoredTopics,
@@ -7,6 +7,11 @@ import {
   getStoredAdminToken,
   setStoredAdminToken,
   setStoredAdminPasskey,
+  getStoredLastActiveChapterId,
+  cacheChapterContent,
+  getCachedChapterContent,
+  evictCachedChapterContent,
+  hydrateChaptersFromCache,
 } from './storage';
 
 function getAdminHeaders(): Record<string, string> {
@@ -19,9 +24,54 @@ function getAdminHeaders(): Record<string, string> {
 }
 
 /**
- * Log in as Admin using Username & Password or Passkey
+ * Safely parse JSON responses without throwing unhandled SyntaxError on non-JSON gateway/error responses
  */
-export async function loginAdminApi(usernameOrPasskey: string, password?: string): Promise<{
+async function safeJsonParse<T = any>(res: Response): Promise<T | null> {
+  try {
+    const text = await res.text();
+    if (!text || !text.trim()) return null;
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
+export interface TotpSetupInfo {
+  success: boolean;
+  email?: string;
+  secret?: string;
+  formattedSecret?: string;
+  otpauthUrl?: string;
+  qrCodeDataUrl?: string;
+  period?: number;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Request Google Authenticator TOTP challenge for an email
+ */
+export async function requestTotpApi(email: string): Promise<TotpSetupInfo> {
+  try {
+    const res = await fetch('/api/admin/send-totp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      return data;
+    }
+    return { success: false, error: data.error || 'Failed to initiate Google Authenticator verification' };
+  } catch (err) {
+    return { success: false, error: 'Network error or server unreachable' };
+  }
+}
+
+/**
+ * Verify 6-digit TOTP code from Google Authenticator
+ */
+export async function verifyTotpApi(email: string, totpCode: string): Promise<{
   success: boolean;
   token?: string;
   passkey?: string;
@@ -29,9 +79,79 @@ export async function loginAdminApi(usernameOrPasskey: string, password?: string
   error?: string;
 }> {
   try {
-    const payload = password !== undefined
-      ? { username: usernameOrPasskey, password }
-      : { passkey: usernameOrPasskey };
+    const res = await fetch('/api/admin/verify-totp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, totpCode }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      if (data.token) setStoredAdminToken(data.token);
+      if (data.passkey) setStoredAdminPasskey(data.passkey);
+      return { success: true, token: data.token, passkey: data.passkey, user: data.user };
+    }
+    return { success: false, error: data.error || 'Invalid 6-digit code. Please try again.' };
+  } catch (err) {
+    return { success: false, error: 'Network error verifying TOTP code' };
+  }
+}
+
+/**
+ * Get current Google Authenticator setup details (QR code & secret)
+ */
+export async function getTotpInfoApi(email?: string): Promise<TotpSetupInfo> {
+  try {
+    const query = email ? `?email=${encodeURIComponent(email)}` : '';
+    const res = await fetch(`/api/admin/totp-info${query}`);
+    const data = await res.json();
+    if (res.ok && data.success) {
+      return data;
+    }
+    return { success: false, error: data.error || 'Failed to load TOTP setup details' };
+  } catch (err) {
+    return { success: false, error: 'Network error fetching TOTP info' };
+  }
+}
+
+/**
+ * Reset Google Authenticator Secret (Admin only)
+ */
+export async function resetTotpApi(): Promise<TotpSetupInfo> {
+  try {
+    const res = await fetch('/api/admin/reset-totp', {
+      method: 'POST',
+      headers: getAdminHeaders(),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      return data;
+    }
+    return { success: false, error: data.error || 'Failed to reset TOTP secret' };
+  } catch (err) {
+    return { success: false, error: 'Network error resetting TOTP secret' };
+  }
+}
+
+/**
+ * Log in as Admin using Username & Password, Passkey, or TOTP
+ */
+export async function loginAdminApi(usernameOrPasskey: string, password?: string, totpCode?: string): Promise<{
+  success: boolean;
+  requiresTotp?: boolean;
+  token?: string;
+  passkey?: string;
+  user?: User;
+  error?: string;
+}> {
+  try {
+    let payload: Record<string, any>;
+    if (totpCode) {
+      payload = { email: usernameOrPasskey, totpCode };
+    } else if (password !== undefined) {
+      payload = { username: usernameOrPasskey, password };
+    } else {
+      payload = { passkey: usernameOrPasskey };
+    }
 
     const res = await fetch('/api/admin/login', {
       method: 'POST',
@@ -43,6 +163,9 @@ export async function loginAdminApi(usernameOrPasskey: string, password?: string
       if (data.token) setStoredAdminToken(data.token);
       if (data.passkey) setStoredAdminPasskey(data.passkey);
       return { success: true, token: data.token, passkey: data.passkey, user: data.user };
+    }
+    if (data.requiresTotp) {
+      return { success: false, requiresTotp: true, error: data.message };
     }
     return { success: false, error: data.error || 'Failed to authenticate admin' };
   } catch (err) {
@@ -160,19 +283,52 @@ export async function deleteTopicApi(topicId: string): Promise<boolean> {
       method: 'DELETE',
       headers: getAdminHeaders(),
     });
-    return res.ok;
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.topics)) saveStoredTopics(data.topics);
+      if (Array.isArray(data.chapters)) saveStoredChapters(data.chapters);
+      return true;
+    }
+    return false;
   } catch (err) {
     console.error('Failed to delete topic from server:', err);
     return false;
   }
 }
 
+export interface FetchChaptersOptions {
+  summary?: boolean;
+  includeChapterId?: string | null;
+  topicId?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+  sync?: boolean;
+}
+
 /**
- * Fetch all chapters from server API, falling back to localStorage
+ * Fetch chapters from server API with lightweight summary stripping by default,
+ * falling back to localStorage cache if offline.
  */
-export async function fetchChapters(): Promise<Chapter[]> {
+export async function fetchChapters(options?: FetchChaptersOptions): Promise<Chapter[]> {
   try {
-    const res = await fetch(`/api/chapters?_t=${Date.now()}`, {
+    const useSummary = options?.summary !== false;
+    const activeId =
+      options?.includeChapterId !== undefined
+        ? options.includeChapterId
+        : getStoredLastActiveChapterId();
+
+    const params = new URLSearchParams();
+    if (useSummary) params.set('summary', '1');
+    if (activeId) params.set('includeChapterId', activeId);
+    if (options?.topicId) params.set('topicId', options.topicId);
+    if (options?.search) params.set('search', options.search);
+    if (options?.page) params.set('page', String(options.page));
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.sync) params.set('sync', '1');
+    params.set('_t', String(Date.now()));
+
+    const res = await fetch(`/api/chapters?${params.toString()}`, {
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -182,13 +338,76 @@ export async function fetchChapters(): Promise<Chapter[]> {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (Array.isArray(data.chapters)) {
-      saveStoredChapters(data.chapters);
-      return data.chapters;
+      const hydrated = hydrateChaptersFromCache(data.chapters, activeId);
+      saveStoredChapters(hydrated);
+      return hydrated;
     }
   } catch (err) {
     console.warn('Could not fetch chapters from server API, using local cache:', err);
   }
   return getStoredChapters();
+}
+
+const inFlightChapterFetches = new Map<string, Promise<Chapter | null>>();
+
+/**
+ * Fetch full chapter content on demand by ID (with LRU cache hit & request deduplication)
+ */
+export async function fetchChapterById(
+  chapterId: string,
+  options?: { forceRefresh?: boolean }
+): Promise<Chapter | null> {
+  if (!chapterId) return null;
+
+  if (!options?.forceRefresh) {
+    const inFlight = inFlightChapterFetches.get(chapterId);
+    if (inFlight) return inFlight;
+  }
+
+  const fetchPromise = (async (): Promise<Chapter | null> => {
+    try {
+      const res = await fetch(`/api/chapters/${encodeURIComponent(chapterId)}?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data?.chapter) {
+        cacheChapterContent(data.chapter);
+        return {
+          ...data.chapter,
+          hasContent: Boolean(data.chapter.draftHtml || data.chapter.publishedHtml),
+          contentSize: (data.chapter.draftHtml || data.chapter.publishedHtml || '').length,
+          isContentLoaded: true,
+        };
+      }
+    } catch (err) {
+      console.warn(`Could not fetch chapter ${chapterId} from server:`, err);
+      const cached = getCachedChapterContent(chapterId);
+      if (cached) {
+        const storedList = getStoredChapters();
+        const meta = storedList.find((c) => c.id === chapterId);
+        if (meta) {
+          return {
+            ...meta,
+            draftHtml: cached.draftHtml,
+            publishedHtml: cached.publishedHtml || cached.draftHtml,
+            customCss: cached.customCss,
+            hasContent: true,
+            isContentLoaded: true,
+          };
+        }
+      }
+    } finally {
+      inFlightChapterFetches.delete(chapterId);
+    }
+    return null;
+  })();
+
+  inFlightChapterFetches.set(chapterId, fetchPromise);
+  return fetchPromise;
 }
 
 /**
@@ -204,8 +423,9 @@ export async function createChapterApi(chapter: Partial<Chapter>): Promise<Chapt
     if (res.ok) {
       const data = await res.json();
       if (data.chapter) {
+        cacheChapterContent(data.chapter);
         if (Array.isArray(data.chapters)) {
-          saveStoredChapters(data.chapters);
+          saveStoredChapters(hydrateChaptersFromCache(data.chapters, data.chapter.id));
         }
         return data.chapter;
       }
@@ -233,11 +453,22 @@ export async function updateChapterApi(
     if (res.ok) {
       const data = await res.json();
       if (data.chapter) {
+        cacheChapterContent(data.chapter);
         if (Array.isArray(data.chapters)) {
-          saveStoredChapters(data.chapters);
+          saveStoredChapters(hydrateChaptersFromCache(data.chapters, chapterId));
         }
         return data.chapter;
       }
+    } else if (res.status === 410) {
+      // Chapter was deleted on the server; sync authoritative chapters and do NOT re-create
+      evictCachedChapterContent(chapterId);
+      try {
+        const data = await res.json();
+        if (Array.isArray(data.chapters)) {
+          saveStoredChapters(data.chapters);
+        }
+      } catch {}
+      return null;
     } else if (res.status === 404) {
       // Fallback create
       return createChapterApi({ id: chapterId, ...updates });
@@ -263,8 +494,9 @@ export async function publishAllChaptersApi(): Promise<Chapter[]> {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.chapters)) {
-        saveStoredChapters(data.chapters);
-        return data.chapters;
+        const hydrated = hydrateChaptersFromCache(data.chapters, getStoredLastActiveChapterId());
+        saveStoredChapters(hydrated);
+        return hydrated;
       }
     }
   } catch (err) {
@@ -277,12 +509,20 @@ export async function publishAllChaptersApi(): Promise<Chapter[]> {
  * Delete a chapter from server API
  */
 export async function deleteChapterApi(chapterId: string): Promise<boolean> {
+  evictCachedChapterContent(chapterId);
   try {
     const res = await fetch(`/api/chapters/${encodeURIComponent(chapterId)}`, {
       method: 'DELETE',
       headers: getAdminHeaders(),
     });
-    return res.ok;
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.chapters)) {
+        saveStoredChapters(hydrateChaptersFromCache(data.chapters, getStoredLastActiveChapterId()));
+      }
+      return true;
+    }
+    return false;
   } catch (err) {
     console.error('Failed to delete chapter on server:', err);
     return false;
@@ -412,8 +652,9 @@ export async function uploadHtmlChapterApi(
       onProgress
     );
     if (data?.chapter) {
+      cacheChapterContent(data.chapter);
       if (Array.isArray(data.chapters)) {
-        saveStoredChapters(data.chapters);
+        saveStoredChapters(hydrateChaptersFromCache(data.chapters, data.chapter.id));
       }
       return data.chapter;
     }
@@ -439,6 +680,156 @@ export async function syncToLiveSiteApi(): Promise<{ success: boolean; message?:
     return { success: false, error: data.error || 'Failed to sync with live site' };
   } catch (err) {
     return { success: false, error: 'Network error communicating with server' };
+  }
+}
+
+/**
+ * Pull all chapters & topics from personal-handbook.ai.studio into local database
+ */
+export async function pullFromLiveSiteApi(): Promise<{
+  success: boolean;
+  message?: string;
+  chaptersPulled?: number;
+  topicsPulled?: number;
+  topics?: Topic[];
+  chapters?: Chapter[];
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/sync/pull-from-live');
+    const data = await res.json();
+    if (res.ok && data.success) {
+      if (Array.isArray(data.chapters)) saveStoredChapters(data.chapters);
+      if (Array.isArray(data.topics)) saveStoredTopics(data.topics);
+      return data;
+    }
+    return { success: false, error: data.error || data.message || 'Failed to pull from live site' };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Network error pulling from live site' };
+  }
+}
+
+/**
+ * Get live synchronization status
+ */
+export async function getLiveSyncStatusApi(): Promise<SyncStatusResponse> {
+  try {
+    const res = await fetch('/api/sync/status');
+    if (res.ok) {
+      const data = await safeJsonParse<SyncStatusResponse>(res);
+      if (data) return data;
+    }
+  } catch {}
+  return {
+    configured: false,
+    liveOrigin: 'https://personal-handbook.ai.studio',
+    isDev: true,
+    localTopicsCount: 0,
+    localChaptersCount: 0,
+  };
+}
+
+/**
+ * Fetch comprehensive diagnostic health status from /api/health
+ */
+export async function fetchHealthCheckApi(): Promise<HealthCheckResponse | null> {
+  try {
+    const res = await fetch(`/api/health?_t=${Date.now()}`, {
+      cache: 'no-store',
+    });
+    return await safeJsonParse<HealthCheckResponse>(res);
+  } catch (err) {
+    console.warn('Health check request failed:', err);
+    return null;
+  }
+}
+
+/**
+ * Download an authoritative database backup (JSON or SQL dump) directly from the server
+ */
+export async function exportDatabaseBackupApi(
+  format: 'json' | 'sql' = 'json',
+  fallbackData?: { topics: Topic[]; chapters: Chapter[] }
+): Promise<{ success: boolean; filename: string }> {
+  const dateStamp = new Date().toISOString().split('T')[0];
+  const ext = format === 'sql' ? 'sql' : 'json';
+  const filename = `personal_handbook_backup_${dateStamp}.${ext}`;
+
+  try {
+    const res = await fetch(`/api/backup/export?format=${encodeURIComponent(format)}`, {
+      headers: getAdminHeaders(),
+    });
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      return { success: true, filename };
+    }
+  } catch (err) {
+    console.warn('Server backup export unreachable, using local fallback:', err);
+  }
+
+  if (fallbackData && format === 'json') {
+    const blob = new Blob(
+      [
+        JSON.stringify(
+          {
+            version: 2,
+            exportedAt: new Date().toISOString(),
+            topics: fallbackData.topics,
+            chapters: fallbackData.chapters,
+          },
+          null,
+          2
+        ),
+      ],
+      { type: 'application/json' }
+    );
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    return { success: true, filename };
+  }
+
+  return { success: false, filename };
+}
+
+/**
+ * Restore complete notes from a backup JSON payload to the authoritative server database
+ */
+export async function restoreBackupApi(backup: {
+  topics?: Topic[];
+  chapters?: Chapter[];
+  mode?: 'merge' | 'replace';
+}): Promise<{
+  success: boolean;
+  message?: string;
+  topics?: Topic[];
+  chapters?: Chapter[];
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/backup/restore', {
+      method: 'POST',
+      headers: getAdminHeaders(),
+      body: JSON.stringify(backup),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      if (Array.isArray(data.chapters)) saveStoredChapters(data.chapters);
+      if (Array.isArray(data.topics)) saveStoredTopics(data.topics);
+      return data;
+    }
+    return { success: false, error: data.error || 'Failed to restore backup' };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Network error restoring backup' };
   }
 }
 

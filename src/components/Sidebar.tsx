@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Topic, Chapter, ViewMode, User, ReadingPosition } from '../types';
 import {
   ChevronDown,
   ChevronRight,
   Plus,
-  BookOpen,
   FileText,
   Layers,
   Server,
@@ -12,24 +11,23 @@ import {
   MoreVertical,
   Trash2,
   Edit2,
-  CheckCircle2,
-  Clock,
   FolderPlus,
   Upload,
   GripVertical,
   Lock,
-  UserCheck,
-  ShieldAlert,
   Bookmark,
   X,
-  Zap,
   PanelLeftClose,
-  Palette,
-  Send,
-  Sparkles,
   Loader2,
+  Search,
 } from 'lucide-react';
 import { FileUploadProgressState } from '../lib/uploadProgress';
+import { buildSeoHashUrl } from '../lib/seo';
+
+const INITIAL_CHAPTERS_PER_TOPIC = 40;
+const CHAPTERS_PAGE_STEP = 50;
+const INITIAL_TOPICS_WINDOW = 50;
+const TOPICS_PAGE_STEP = 50;
 
 interface SidebarProps {
   topics: Topic[];
@@ -57,6 +55,8 @@ interface SidebarProps {
   onCloseSidebar?: () => void;
   quickUploadState?: FileUploadProgressState;
   targetTopicIdForUpload?: string | null;
+  loadingChapterId?: string | null;
+  onPrefetchChapter?: (chapterId: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -80,12 +80,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseSidebar,
   quickUploadState,
   targetTopicIdForUpload,
+  loadingChapterId,
+  onPrefetchChapter,
 }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [topicChapterLimits, setTopicChapterLimits] = useState<Record<string, number>>({});
+  const [visibleTopicsLimit, setVisibleTopicsLimit] = useState<number>(INITIAL_TOPICS_WINDOW);
+
+  // O(T + C) pre-grouped and sorted chapter map so rendering hundreds/thousands of chapters stays instant
+  const chaptersByTopic = useMemo(() => {
+    const map = new Map<string, Chapter[]>();
+    for (const c of chapters) {
+      let list = map.get(c.topicId);
+      if (!list) {
+        list = [];
+        map.set(c.topicId, list);
+      }
+      list.push(c);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => a.order - b.order);
+    }
+    return map;
+  }, [chapters]);
+
+  // Filtered topics & chapters when searchQuery is active
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredTopics = useMemo(() => {
+    if (!normalizedQuery) return topics;
+    return topics.filter((t) => {
+      if (t.name.toLowerCase().includes(normalizedQuery)) return true;
+      const list = chaptersByTopic.get(t.id) || [];
+      return list.some(
+        (c) =>
+          c.title.toLowerCase().includes(normalizedQuery) ||
+          (c.slug && c.slug.toLowerCase().includes(normalizedQuery)) ||
+          (Array.isArray(c.tags) && c.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery)))
+      );
+    });
+  }, [topics, chaptersByTopic, normalizedQuery]);
+
   // Default expanded: topics with chapters start expanded, empty topics start collapsed
   const [expandedTopicIds, setExpandedTopicIds] = useState<Record<string, boolean>>(() => {
     const map: Record<string, boolean> = {};
     topics.forEach((t) => {
-      map[t.id] = chapters.some((c) => c.topicId === t.id);
+      map[t.id] = (chaptersByTopic.get(t.id)?.length || 0) > 0;
     });
     return map;
   });
@@ -96,14 +135,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       const map: Record<string, boolean> = { ...prev };
       topics.forEach((t) => {
         if (map[t.id] === undefined) {
-          map[t.id] = chapters.some((c) => c.topicId === t.id);
+          map[t.id] = (chaptersByTopic.get(t.id)?.length || 0) > 0;
         }
       });
       return map;
     });
-  }, [user, topics, chapters]);
+  }, [user, topics, chaptersByTopic]);
 
-  // When active chapter changes, ensure its parent topic is expanded
+  // When active chapter changes, ensure its parent topic is expanded and its index is within the visible window
   useEffect(() => {
     if (activeChapterId) {
       const activeChap = chapters.find((c) => c.id === activeChapterId);
@@ -112,9 +151,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ...prev,
           [activeChap.topicId]: true,
         }));
+        const topicChaps = chaptersByTopic.get(activeChap.topicId) || [];
+        const activeIdx = topicChaps.findIndex((c) => c.id === activeChapterId);
+        if (activeIdx >= INITIAL_CHAPTERS_PER_TOPIC) {
+          setTopicChapterLimits((prev) => {
+            const currentLimit = prev[activeChap.topicId] || INITIAL_CHAPTERS_PER_TOPIC;
+            if (activeIdx >= currentLimit) {
+              return { ...prev, [activeChap.topicId]: activeIdx + 20 };
+            }
+            return prev;
+          });
+        }
       }
     }
-  }, [activeChapterId, chapters]);
+  }, [activeChapterId, chapters, chaptersByTopic]);
 
   const [openMenuTopicId, setOpenMenuTopicId] = useState<string | null>(null);
   const [editingChapterId, setEditingChapterId] = useState<string | null>(null);
@@ -188,19 +238,78 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Topics & Chapters Tree */}
-      <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
-        {topics.length === 0 ? (
+      {/* Quick Filter / Search Bar for large datasets */}
+      {(chapters.length > 5 || topics.length > 4 || searchQuery.length > 0) && (
+        <div className="px-2.5 pt-2 pb-1 bg-white/40 dark:bg-[#13171f]/40 border-b border-[#e4e6eb]/60 dark:border-[#262c36]/60">
+          <div className="relative flex items-center">
+            <Search className="w-3.5 h-3.5 text-[#65676b] dark:text-[#94a3b8] absolute left-2.5 pointer-events-none" />
+            <input
+              id="sidebar-search-input"
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter topics & chapters..."
+              className="w-full pl-8 pr-7 py-1 text-xs rounded-lg bg-white dark:bg-[#181d28] border border-[#e4e6eb] dark:border-[#262c36] text-[#050505] dark:text-[#f8fafc] placeholder-[#8a8d91] dark:placeholder-[#64748b] focus:outline-hidden focus:border-[#1877f2] dark:focus:border-[#3b82f6] transition-colors"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 p-0.5 text-[#65676b] dark:text-[#94a3b8] hover:text-[#050505] dark:hover:text-[#f8fafc] cursor-pointer"
+                title="Clear filter"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Topics & Chapters Tree (with progressive scroll windowing) */}
+      <div
+        className="flex-1 overflow-y-auto p-2.5 space-y-2"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          if (
+            filteredTopics.length > visibleTopicsLimit &&
+            el.scrollTop + el.clientHeight >= el.scrollHeight - 240
+          ) {
+            setVisibleTopicsLimit((prev) => Math.min(filteredTopics.length, prev + TOPICS_PAGE_STEP));
+          }
+        }}
+      >
+        {filteredTopics.length === 0 ? (
           <div className="p-6 text-center">
-            <p className="text-xs text-[#65676b] dark:text-[#94a3b8]">No topics or chapters found</p>
+            <p className="text-xs text-[#65676b] dark:text-[#94a3b8]">
+              {normalizedQuery ? `No matches for "${searchQuery}"` : 'No topics or chapters found'}
+            </p>
           </div>
         ) : (
-          topics.map((topic) => {
-            const topicChapters = chapters
-              .filter((c) => c.topicId === topic.id)
-              .sort((a, b) => a.order - b.order);
+          filteredTopics.slice(0, visibleTopicsLimit).map((topic) => {
+            const allTopicChapters = chaptersByTopic.get(topic.id) || [];
+            const topicMatchesDirectly =
+              normalizedQuery && topic.name.toLowerCase().includes(normalizedQuery);
+            const topicChapters =
+              normalizedQuery && !topicMatchesDirectly
+                ? allTopicChapters.filter(
+                    (c) =>
+                      c.title.toLowerCase().includes(normalizedQuery) ||
+                      (c.slug && c.slug.toLowerCase().includes(normalizedQuery)) ||
+                      (Array.isArray(c.tags) &&
+                        c.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery)))
+                  )
+                : allTopicChapters;
 
-            const isExpanded = expandedTopicIds[topic.id] !== false;
+            const isExpanded = normalizedQuery
+              ? true
+              : expandedTopicIds[topic.id] !== false;
+
+            const visibleLimit = topicChapterLimits[topic.id] || INITIAL_CHAPTERS_PER_TOPIC;
+            const visibleChapters =
+              topicChapters.length > visibleLimit
+                ? topicChapters.slice(0, visibleLimit)
+                : topicChapters;
+            const remainingChaptersCount = Math.max(0, topicChapters.length - visibleChapters.length);
 
             const handleTopicHeaderClick = () => {
               toggleTopic(topic.id);
@@ -339,11 +448,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         )}
                       </div>
                     ) : (
-                      topicChapters.map((chapter) => {
+                      visibleChapters.map((chapter, chapterIndex) => {
                         const isActive = activeChapterId === chapter.id;
                         const isDraggingThis = draggedChapterId === chapter.id;
                         const isDragTarget = dragOverInfo?.chapterId === chapter.id;
                         const dragPosition = dragOverInfo?.position;
+                        const isFirstChapterInTopic = chapterIndex === 0;
+                        const isChapterLocked = !user && !isFirstChapterInTopic;
                         const handleChapterClick = () => {
                           onSelectChapter(chapter.id);
                         };
@@ -422,6 +533,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 setDraggedTopicId(null);
                                 setDragOverInfo(null);
                               }}
+                              onMouseEnter={() => {
+                                onPrefetchChapter?.(chapter.id);
+                              }}
                               onClick={handleChapterClick}
                               className={`group relative flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs cursor-pointer transition-all select-none ${
                                 isDraggingThis
@@ -431,7 +545,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   : 'text-[#4b4c4f] dark:text-[#94a3b8] hover:text-[#050505] dark:hover:text-[#f8fafc] hover:bg-[#e7f3ff]/70 dark:hover:bg-[#1e293b]/70 font-medium'
                               }`}
                             >
-                              <div className="flex items-center gap-1.5 truncate flex-1 min-w-0 group-hover:pr-14 transition-[padding]">
+                              <div className={`flex items-center gap-1.5 truncate flex-1 min-w-0 transition-[padding] ${user ? 'group-hover:pr-14' : ''}`}>
                                 {/* Grip Drag Handle - only for logged in user */}
                                 {user && (
                                   <div
@@ -448,28 +562,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   </div>
                                 )}
 
-                                {/* Small Status Indicator Dot on the left in the 6-dots gap */}
-                                <span
-                                  id={`chapter-status-dot-${chapter.id}`}
-                                  className={`w-2 h-2 rounded-full shrink-0 transition-all ${
-                                    chapter.status === 'published'
-                                      ? isActive
-                                        ? 'bg-emerald-300 ring-2 ring-white/60'
-                                        : 'bg-emerald-500 dark:bg-emerald-400 ring-1 ring-emerald-500/30'
-                                      : isActive
-                                        ? 'bg-amber-300 ring-2 ring-white/60 animate-pulse'
-                                        : 'bg-amber-500 dark:bg-amber-400 ring-1 ring-amber-500/30 animate-pulse'
-                                  }`}
-                                  title={chapter.status === 'published' ? 'Published' : 'Unpublished'}
-                                />
-
-                                <FileText
-                                  className={`w-3.5 h-3.5 shrink-0 ${
-                                    isActive
-                                      ? 'text-white'
-                                      : 'text-[#1877f2] dark:text-[#60a5fa] opacity-80 group-hover:opacity-100'
-                                  }`}
-                                />
+                                {/* Locked icon, loading spinner, or file text icon */}
+                                {loadingChapterId === chapter.id ? (
+                                  <Loader2
+                                    className={`w-3.5 h-3.5 shrink-0 animate-spin ${
+                                      isActive ? 'text-white' : 'text-[#1877f2] dark:text-[#60a5fa]'
+                                    }`}
+                                    aria-label="Loading chapter content..."
+                                  />
+                                ) : isChapterLocked ? (
+                                  <div
+                                    className={`p-1 rounded-md shrink-0 flex items-center justify-center transition-colors ${
+                                      isActive
+                                        ? 'bg-white/15 text-white ring-1 ring-white/30'
+                                        : 'bg-slate-500/10 text-[#65676b] dark:text-[#94a3b8] ring-1 ring-slate-500/20 group-hover:bg-slate-500/15'
+                                    }`}
+                                    title="Locked chapter • Sign in with Google Authenticator for full notes"
+                                  >
+                                    <Lock className="w-3.5 h-3.5" />
+                                  </div>
+                                ) : (
+                                  <FileText
+                                    className={`w-3.5 h-3.5 shrink-0 ${
+                                      isActive
+                                        ? 'text-white'
+                                        : 'text-[#1877f2] dark:text-[#60a5fa] opacity-80 group-hover:opacity-100'
+                                    }`}
+                                  />
+                                )}
 
                                 {editingChapterId === chapter.id ? (
                                   <input
@@ -492,10 +612,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     className="flex-1 min-w-0 px-1.5 py-0.5 text-xs font-semibold rounded-md border border-[#1877f2] dark:border-[#3b82f6] bg-white dark:bg-[#0e1217] text-[#050505] dark:text-[#f8fafc] focus:outline-hidden ring-1 ring-[#1877f2]"
                                   />
                                 ) : (
-                                  <span
-                                    className="truncate"
+                                  <a
+                                    href={buildSeoHashUrl(topic, chapter)}
+                                    className="truncate no-underline text-inherit"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      handleChapterClick();
+                                    }}
                                     onDoubleClick={(e) => {
                                       if (user) {
+                                        e.preventDefault();
                                         e.stopPropagation();
                                         setEditingChapterId(chapter.id);
                                         setEditingTitle(chapter.title);
@@ -504,7 +630,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     title={user ? `${chapter.title} (Double-click to rename)` : chapter.title}
                                   >
                                     {chapter.title}
-                                  </span>
+                                  </a>
                                 )}
 
                                 {readingPositions[chapter.id] && readingPositions[chapter.id].progress > 0 && (
@@ -586,6 +712,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       })
                     )}
 
+                    {/* Lazy-load more chapters button when topic has >40 chapters */}
+                    {remainingChaptersCount > 0 && (
+                      <div className="pt-1 flex items-center gap-1.5">
+                        <button
+                          id={`load-more-chapters-${topic.id}`}
+                          onClick={() =>
+                            setTopicChapterLimits((prev) => ({
+                              ...prev,
+                              [topic.id]: (prev[topic.id] || INITIAL_CHAPTERS_PER_TOPIC) + CHAPTERS_PAGE_STEP,
+                            }))
+                          }
+                          className="flex-1 py-1 px-2 rounded-lg text-[11px] font-semibold text-[#1877f2] dark:text-[#60a5fa] bg-[#e7f3ff]/60 dark:bg-[#1e293b]/60 hover:bg-[#e7f3ff] dark:hover:bg-[#1e293b] border border-[#d8e4f8] dark:border-[#283548] transition-colors cursor-pointer text-center"
+                        >
+                          Show {Math.min(CHAPTERS_PAGE_STEP, remainingChaptersCount)} more ({remainingChaptersCount} remaining)
+                        </button>
+                      </div>
+                    )}
+
                     {/* Quick Add Chapter button at the bottom of the list for Admin */}
                     {user && topicChapters.length > 0 && (
                       <div className="pt-1">
@@ -604,6 +748,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             );
           })
+        )}
+
+        {/* Load more topics button if >50 topics */}
+        {filteredTopics.length > visibleTopicsLimit && (
+          <div className="pt-2 pb-4 text-center">
+            <button
+              id="load-more-topics-btn"
+              onClick={() =>
+                setVisibleTopicsLimit((prev) => Math.min(filteredTopics.length, prev + TOPICS_PAGE_STEP))
+              }
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold text-[#1877f2] dark:text-[#60a5fa] bg-white dark:bg-[#181d28] border border-[#d8e4f8] dark:border-[#283548] shadow-2xs hover:bg-[#e7f3ff] dark:hover:bg-[#1e293b] transition-colors cursor-pointer"
+            >
+              Show more topics ({filteredTopics.length - visibleTopicsLimit} remaining)
+            </button>
+          </div>
         )}
       </div>
 

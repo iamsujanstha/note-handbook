@@ -48,9 +48,9 @@ export function detectIsDark(doc: Document): boolean {
  * Initializes Mermaid with precise GitHub Markdown styling.
  * Background is ALWAYS transparent so the SVG never displays an ugly dark cutout box!
  */
-export function initMermaid(isDark: boolean = false) {
+export function initMermaid(isDark: boolean = false, force: boolean = false) {
   const themeMode = isDark ? 'dark' : 'light';
-  if (currentTheme === themeMode) return;
+  if (currentTheme === themeMode && !force) return;
 
   try {
     if (isDark) {
@@ -96,7 +96,7 @@ export function initMermaid(isDark: boolean = false) {
           textColor: '#f8fafc',
           primaryColor: '#1e293b',
           primaryTextColor: '#f8fafc',
-          primaryBorderColor: '#475569',
+          primaryBorderColor: '#38bdf8',
           secondaryColor: '#161b22',
           secondaryTextColor: '#f8fafc',
           secondaryBorderColor: '#30363d',
@@ -108,8 +108,8 @@ export function initMermaid(isDark: boolean = false) {
           titleColor: '#f8fafc',
           edgeLabelBackground: '#161b22',
           actorBkg: '#1e293b',
-          actorBorder: '#64748b',
-          actorTextColor: '#f8fafc',
+          actorBorder: '#38bdf8',
+          actorTextColor: '#ffffff',
           actorLineColor: '#64748b',
           signalColor: '#94a3b8',
           signalTextColor: '#f8fafc',
@@ -487,6 +487,126 @@ export const MERMAID_CODE_STYLES = `
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "JetBrains Mono", monospace !important;
   font-size: 11.5px !important;
 }
+
+/* Sequence Diagram Participant / Actor High-Contrast Accessibility (Dark & Light) */
+.dark .mermaid-canvas svg text.actor,
+.dark .mermaid-canvas svg text.actor > tspan,
+.dark .mermaid-container svg text.actor,
+.dark .mermaid-container svg text.actor > tspan,
+.dark .diagram-wrapper svg text.actor,
+.dark .diagram-wrapper svg text.actor > tspan,
+.dark .github-mermaid-block svg text.actor,
+.dark .github-mermaid-block svg text.actor > tspan,
+.dark svg.mermaid text.actor,
+.dark svg.mermaid text.actor > tspan,
+.dark svg.mermaid-svg text.actor,
+.dark svg.mermaid-svg text.actor > tspan,
+[data-theme="dark"] svg text.actor,
+[data-theme="dark"] svg text.actor > tspan,
+.diagram-theme-dark svg text.actor,
+.diagram-theme-dark svg text.actor > tspan,
+.diagram-theme-dark text.actor,
+.diagram-theme-dark text.actor > tspan {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  font-size: 13.5px !important;
+}
+
+.dark .mermaid-canvas svg .actor,
+.dark .mermaid-container svg .actor,
+.dark .diagram-wrapper svg .actor,
+.dark .github-mermaid-block svg .actor,
+.dark svg.mermaid .actor,
+.dark svg.mermaid-svg .actor,
+[data-theme="dark"] svg .actor,
+.diagram-theme-dark svg .actor {
+  fill: #1e293b !important;
+  stroke: #38bdf8 !important;
+  stroke-width: 2px !important;
+  rx: 8px !important;
+  ry: 8px !important;
+}
+
+.dark .mermaid-canvas svg .actor-line,
+.dark .mermaid-container svg .actor-line,
+.dark .diagram-wrapper svg .actor-line,
+.dark .github-mermaid-block svg .actor-line,
+[data-theme="dark"] svg .actor-line,
+.diagram-theme-dark svg .actor-line {
+  stroke: #64748b !important;
+  stroke-width: 1.5px !important;
+  stroke-dasharray: 4, 4 !important;
+}
+
+.dark .mermaid-canvas svg .messageText,
+.dark .mermaid-container svg .messageText,
+.dark .diagram-wrapper svg .messageText,
+.dark .github-mermaid-block svg .messageText,
+[data-theme="dark"] svg .messageText,
+.diagram-theme-dark svg .messageText {
+  fill: #f8fafc !important;
+  color: #f8fafc !important;
+  font-weight: 600 !important;
+}
+
+.dark .mermaid-canvas svg .messageLine0,
+.dark .mermaid-canvas svg .messageLine1,
+.dark .mermaid-container svg .messageLine0,
+.dark .mermaid-container svg .messageLine1,
+.dark .diagram-wrapper svg .messageLine0,
+.dark .diagram-wrapper svg .messageLine1,
+[data-theme="dark"] svg .messageLine0,
+[data-theme="dark"] svg .messageLine1,
+.diagram-theme-dark svg .messageLine0,
+.diagram-theme-dark svg .messageLine1 {
+  stroke: #94a3b8 !important;
+  stroke-width: 1.75px !important;
+}
+
+.dark .mermaid-canvas svg .sequenceNumber,
+[data-theme="dark"] svg .sequenceNumber,
+.diagram-theme-dark svg .sequenceNumber {
+  fill: #0284c7 !important;
+  stroke: #38bdf8 !important;
+  color: #ffffff !important;
+}
+
+/* Light Mode Overrides for Sequence Diagrams */
+.diagram-theme-light svg text.actor,
+.diagram-theme-light svg text.actor > tspan {
+  fill: #0f172a !important;
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+.diagram-theme-light svg .actor {
+  fill: #ffffff !important;
+  stroke: #2563eb !important;
+  stroke-width: 2px !important;
+}
+.diagram-theme-light svg .messageText {
+  fill: #0f172a !important;
+  color: #0f172a !important;
+}
+.diagram-theme-light svg .messageLine0,
+.diagram-theme-light svg .messageLine1 {
+  stroke: #334155 !important;
+}
+.diagram-theme-light .diagram-header {
+  background: #f8fafc !important;
+  border-bottom-color: #cbd5e1 !important;
+}
+.diagram-theme-dark .diagram-header {
+  background: #161b22 !important;
+  border-bottom-color: #30363d !important;
+}
+.diagram-theme-light .diagram-title {
+  color: #0f172a !important;
+}
+.diagram-theme-dark .diagram-title {
+  color: #f8fafc !important;
+}
+
 
 /* Code Panel Container */
 .mermaid-code-panel {
@@ -897,6 +1017,8 @@ export const MERMAID_CODE_STYLES = `
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
   padding: 10px 16px !important;
   border-bottom: 1.5px solid #cbd5e1 !important;
   gap: 12px !important;
@@ -904,12 +1026,21 @@ export const MERMAID_CODE_STYLES = `
   transition: all 0.2s ease !important;
 }
 
+.diagram-title-group {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+
 .diagram-accent-bar {
+  display: none !important;
   position: absolute !important;
   top: 0 !important;
   left: 0 !important;
   right: 0 !important;
-  height: 3px !important;
+  height: 0 !important;
   z-index: 10 !important;
 }
 
@@ -1071,6 +1202,8 @@ export const MERMAID_CODE_STYLES = `
   display: inline-flex !important;
   align-items: center !important;
   gap: 3px !important;
+  margin-left: auto !important;
+  flex-shrink: 0 !important;
   background: #f8fafc !important;
   border: 1.5px solid #cbd5e1 !important;
   border-radius: 10px !important;
@@ -1201,6 +1334,145 @@ html.dark .diagram-toolbar .zoom-val,
 body.dark .diagram-toolbar .zoom-val,
 .markdown-body.dark .diagram-toolbar .zoom-val {
   color: #f8fafc !important;
+}
+
+/* Floating Zoom Control Overlay - Initial Position: Bottom-Right */
+.mermaid-viewport {
+  position: relative !important;
+}
+.note-content .mermaid-zoom-overlay,
+.mermaid-zoom-overlay,
+.mermaid-zoom-badge {
+  position: absolute !important;
+  bottom: 16px !important;
+  right: 16px !important;
+  left: auto !important;
+  top: auto !important;
+  transform: none !important;
+  margin: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  padding: 4px 6px !important;
+  border-radius: 9999px !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #334155 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  z-index: 30 !important;
+  user-select: none !important;
+  pointer-events: auto !important;
+  transition: all 0.2s ease !important;
+}
+.dark .note-content .mermaid-zoom-overlay,
+.dark .mermaid-zoom-overlay,
+.dark .mermaid-zoom-badge,
+[data-theme="dark"] .mermaid-zoom-badge,
+[data-theme="dark"] .mermaid-zoom-overlay {
+  background: rgba(15, 23, 42, 0.94) !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45) !important;
+}
+.note-content .mermaid-zoom-overlay:hover,
+.mermaid-zoom-overlay:hover,
+.mermaid-zoom-badge:hover {
+  background: #ffffff !important;
+  border-color: #94a3b8 !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+  transform: translateY(-1px) !important;
+}
+.dark .note-content .mermaid-zoom-overlay:hover,
+.dark .mermaid-zoom-overlay:hover,
+.dark .mermaid-zoom-badge:hover,
+[data-theme="dark"] .mermaid-zoom-badge:hover {
+  background: #0f172a !important;
+  border-color: #475569 !important;
+}
+.mermaid-floating-legend-btn {
+  position: absolute !important;
+  bottom: 14px !important;
+  left: 14px !important;
+  right: auto !important;
+  top: auto !important;
+  transform: none !important;
+  margin: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 5px 12px !important;
+  border-radius: 9999px !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #334155 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  z-index: 30 !important;
+  user-select: none !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease !important;
+}
+.dark .mermaid-floating-legend-btn,
+[data-theme="dark"] .mermaid-floating-legend-btn {
+  background: rgba(22, 27, 34, 0.94) !important;
+  border-color: #30363d !important;
+  color: #c9d1d9 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45) !important;
+}
+.mermaid-legend-overlay {
+  position: absolute !important;
+  top: 48px !important;
+  left: 14px !important;
+  right: auto !important;
+  z-index: 40 !important;
+}
+.zoom-control-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  padding: 0 8px !important;
+  border-radius: 9999px !important;
+  border: none !important;
+  background: transparent !important;
+  color: inherit !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  user-select: none !important;
+}
+.zoom-control-btn:hover {
+  background: #f1f5f9 !important;
+  color: #1d4ed8 !important;
+  transform: scale(1.05) !important;
+}
+.dark .zoom-control-btn:hover,
+[data-theme="dark"] .zoom-control-btn:hover {
+  background: #1e293b !important;
+  color: #60a5fa !important;
+}
+.zoom-indicator-btn {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  gap: 4px !important;
+  padding: 0 8px !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+}
+.dark .zoom-indicator-btn,
+[data-theme="dark"] .zoom-indicator-btn {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
 }
 
 /* Markdown Preview Container Aesthetic */
@@ -1465,9 +1737,68 @@ export function detectDiagramMeta(rawCode: string): DiagramTheme {
 /**
  * Formats code snippets, HTTP endpoints, status codes, and DB operations inside Mermaid SVG nodes
  */
-export function formatMermaidSvgCode(svgEl: SVGElement): void {
+export function formatMermaidSvgCode(svgEl: SVGElement, forceDark?: boolean): void {
   if (!svgEl) return;
   try {
+    const isDarkDoc = forceDark !== undefined
+      ? forceDark
+      : svgEl.closest('.diagram-theme-dark')
+      ? true
+      : svgEl.closest('.diagram-theme-light')
+      ? false
+      : svgEl.ownerDocument ? detectIsDark(svgEl.ownerDocument) : false;
+
+    // Sequence diagrams: high-contrast actor labels & boxes for WCAG AAA accessibility
+    const actorTexts = svgEl.querySelectorAll('text.actor, .actor text, g.actor text, text[class*="actor"], .actor-box text');
+    actorTexts.forEach((txt) => {
+      const textColor = isDarkDoc ? '#ffffff' : '#0f172a';
+      txt.setAttribute('fill', textColor);
+      (txt as HTMLElement).style.fill = textColor;
+      (txt as HTMLElement).style.color = textColor;
+      (txt as HTMLElement).style.fontWeight = '700';
+      txt.querySelectorAll('tspan').forEach((tsp) => {
+        tsp.setAttribute('fill', textColor);
+        tsp.style.fill = textColor;
+        tsp.style.fontWeight = '700';
+      });
+    });
+
+    const actorBoxes = svgEl.querySelectorAll('rect.actor, .actor rect, g.actor rect, rect[class*="actor"]');
+    actorBoxes.forEach((rect) => {
+      if (isDarkDoc) {
+        rect.setAttribute('fill', '#1e293b');
+        rect.setAttribute('stroke', '#38bdf8');
+        rect.setAttribute('stroke-width', '2');
+        (rect as HTMLElement).style.fill = '#1e293b';
+        (rect as HTMLElement).style.stroke = '#38bdf8';
+        (rect as HTMLElement).style.strokeWidth = '2px';
+      } else {
+        rect.setAttribute('fill', '#ffffff');
+        rect.setAttribute('stroke', '#2563eb');
+        rect.setAttribute('stroke-width', '2');
+        (rect as HTMLElement).style.fill = '#ffffff';
+        (rect as HTMLElement).style.stroke = '#2563eb';
+        (rect as HTMLElement).style.strokeWidth = '2px';
+      }
+    });
+
+    const actorLines = svgEl.querySelectorAll('.actor-line, line.actor-line, path.actor-line');
+    actorLines.forEach((line) => {
+      const lineColor = isDarkDoc ? '#64748b' : '#475569';
+      line.setAttribute('stroke', lineColor);
+      (line as HTMLElement).style.stroke = lineColor;
+    });
+
+    const seqNums = svgEl.querySelectorAll('.sequenceNumber, circle.sequenceNumber, text.sequenceNumber');
+    seqNums.forEach((el) => {
+      if (el.tagName.toLowerCase() === 'circle') {
+        el.setAttribute('fill', isDarkDoc ? '#0284c7' : '#dbeafe');
+        el.setAttribute('stroke', isDarkDoc ? '#38bdf8' : '#2563eb');
+      } else {
+        el.setAttribute('fill', isDarkDoc ? '#ffffff' : '#1e40af');
+      }
+    });
+
     // 1. Process all foreignObject text contents (flowchart nodes, labels, clusters, etc.)
     const foreignLabels = svgEl.querySelectorAll('.nodeLabel, .label, .edgeLabel, .cluster-label, div[class*="label"], [class*="nodeLabel"]');
     foreignLabels.forEach((el) => {
@@ -1802,7 +2133,6 @@ function buildDiagramHeader(
   const titleGroup = d.createElement('div');
   titleGroup.className = 'diagram-title-group flex items-center gap-3 min-w-0';
   titleGroup.innerHTML = `
-    <div class="diagram-accent-bar absolute top-0 left-0 right-0 h-[3px]" style="background: ${meta.gradient};"></div>
     <span class="diagram-icon-badge inline-flex items-center justify-center w-8 h-8 rounded-lg shadow-sm text-base select-none shrink-0" style="background: ${meta.gradient}; color: #ffffff; box-shadow: 0 2px 8px ${meta.glowColor};" aria-hidden="true">
       ${iconSymbol || meta.icon}
     </span>
@@ -1817,7 +2147,7 @@ function buildDiagramHeader(
   `;
 
   const toolbar = d.createElement('div');
-  toolbar.className = 'diagram-toolbar flex items-center gap-1 bg-[#f8fafc] dark:bg-[#0d1117] p-1 rounded-xl border border-[#cbd5e1] dark:border-[#30363d] shadow-xs select-none';
+  toolbar.className = 'diagram-toolbar ml-auto flex items-center gap-1 bg-[#f8fafc] dark:bg-[#0d1117] p-1 rounded-xl border border-[#cbd5e1] dark:border-[#30363d] shadow-xs select-none';
   toolbar.setAttribute('role', 'toolbar');
   toolbar.setAttribute('aria-label', 'Diagram controls');
 
@@ -1845,6 +2175,9 @@ function buildDiagramHeader(
     <div class="h-4 w-px bg-[#cbd5e1] dark:bg-[#30363d] mx-0.5"></div>
     <button type="button" class="btn-diag-copy diagram-btn flex items-center justify-center h-7 px-2.5 rounded-lg text-xs font-mono font-semibold text-[#475569] dark:text-[#c9d1d9] hover:bg-[#e2e8f0] dark:hover:bg-[#21262d] transition-colors cursor-pointer" title="Copy Mermaid syntax" aria-label="Copy Mermaid syntax">
       📋 Copy
+    </button>
+    <button type="button" class="btn-diag-theme btn-mermaid-theme diagram-btn flex items-center justify-center gap-1 h-7 px-2.5 rounded-lg text-xs font-mono font-semibold text-[#475569] dark:text-[#c9d1d9] hover:bg-[#e2e8f0] dark:hover:bg-[#21262d] transition-colors cursor-pointer" title="Toggle diagram theme: Dark / Light" aria-label="Toggle diagram theme">
+      <span class="theme-icon" aria-hidden="true">🌓</span> <span class="theme-text">Theme</span>
     </button>
     <button type="button" class="btn-diag-expand diagram-btn flex items-center justify-center h-7 px-2.5 rounded-lg text-xs font-mono font-semibold text-[#475569] dark:text-[#c9d1d9] hover:bg-[#e2e8f0] dark:hover:bg-[#21262d] transition-colors cursor-pointer" title="Toggle Fullscreen View" aria-label="Toggle Fullscreen View">
       ⛶ Fullscreen
@@ -2219,7 +2552,7 @@ export function setupDiagramInteractions(block: HTMLElement, win?: Window | null
     const targetEl = canvas || viewport?.querySelector('svg');
     if (targetEl) {
       targetEl.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
-      targetEl.style.transformOrigin = 'center center';
+      targetEl.style.transformOrigin = 'top center';
     }
 
     const pctStr = `${Math.round(scale * 100)}%`;
@@ -2499,6 +2832,54 @@ export function setupDiagramInteractions(block: HTMLElement, win?: Window | null
           btnCopy.innerHTML = origHtml;
         }, 2000);
       });
+    }
+  });
+
+  // Toggle Diagram Theme (Dark / Light)
+  const btnTheme = block.querySelector('.btn-mermaid-theme, .btn-diag-theme');
+  btnTheme?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const isDocDark = ownerDoc ? detectIsDark(ownerDoc) : false;
+    const isCurrentlyDark = block.classList.contains('diagram-theme-dark')
+      ? true
+      : block.classList.contains('diagram-theme-light')
+      ? false
+      : isDocDark;
+    const nextDark = !isCurrentlyDark;
+
+    block.classList.remove('diagram-theme-dark', 'diagram-theme-light');
+    block.classList.add(nextDark ? 'diagram-theme-dark' : 'diagram-theme-light');
+    block.setAttribute('data-diagram-theme', nextDark ? 'dark' : 'light');
+
+    const allThemeBtns = block.querySelectorAll('.btn-mermaid-theme, .btn-diag-theme');
+    allThemeBtns.forEach((b) => {
+      b.innerHTML = `<span class="theme-icon" aria-hidden="true">${nextDark ? '🌙' : '☀️'}</span> <span class="theme-text">${nextDark ? 'Dark' : 'Light'}</span>`;
+      b.setAttribute('title', `Current: ${nextDark ? 'Dark' : 'Light'} Mode. Click to toggle.`);
+    });
+
+    const codeToRender = rawCode || block.getAttribute('data-raw-mermaid') || '';
+    if (codeToRender && canvas) {
+      try {
+        initMermaid(nextDark, true);
+        const diagramId = `mermaid-toggle-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const { svg } = await mermaid.render(diagramId, codeToRender);
+        canvas.innerHTML = svg;
+        const svgEl = canvas.querySelector('svg');
+        if (svgEl) {
+          svgEl.classList.remove('mermaid');
+          svgEl.classList.add('mermaid-svg');
+          svgEl.style.background = 'transparent';
+          formatMermaidSvgCode(svgEl, nextDark);
+        }
+        updateTransform();
+      } catch (err) {
+        console.warn('Theme switch render error:', err);
+        const svgEl = canvas.querySelector('svg');
+        if (svgEl) formatMermaidSvgCode(svgEl, nextDark);
+      }
+    } else {
+      const svgEl = (canvas || viewport)?.querySelector('svg');
+      if (svgEl) formatMermaidSvgCode(svgEl, nextDark);
     }
   });
 

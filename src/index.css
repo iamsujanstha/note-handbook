@@ -21,6 +21,16 @@
     --fb-bg: #0e1217;
   }
 
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
   html, body {
     background-color: #f0f2f5;
     color: #050505;
@@ -28,7 +38,6 @@
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    scroll-behavior: smooth;
   }
 
   html.dark, html.dark body {
@@ -291,8 +300,8 @@ div.mermaid:not(.mermaid-container *):not(.diagram-wrapper *),
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
+  justify-content: flex-start;
+  align-items: stretch;
   width: 100%;
   min-height: 290px;
   overflow: hidden;
@@ -343,7 +352,7 @@ div.mermaid:not(.mermaid-container *):not(.diagram-wrapper *),
   height: auto;
   overflow: hidden;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   cursor: grab;
   user-select: none;
@@ -360,10 +369,10 @@ div.mermaid:not(.mermaid-container *):not(.diagram-wrapper *),
 .note-content .mermaid-canvas,
 .mermaid-canvas {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   will-change: transform;
-  transform-origin: center center;
+  transform-origin: top center;
   transition: transform 0.05s ease-out;
   pointer-events: auto;
 }
@@ -375,7 +384,7 @@ div.mermaid:not(.mermaid-container *):not(.diagram-wrapper *),
   overflow: visible !important;
   display: block;
   margin: 0 auto;
-  transform-origin: center center;
+  transform-origin: top center;
   background: transparent !important;
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.04));
 }
@@ -625,7 +634,18 @@ svg.mermaid .noteText > tspan {
   color: #2563eb;
 }
 
-/* Dark mode support */
+/* Dark mode support - via class, attribute, diagram class, or system preference */
+.dark .note-content .mermaid:not(.mermaid-container *):not(.diagram-wrapper *),
+.dark .note-content .mermaid-container,
+.dark .note-content .mermaid-view,
+.dark .mermaid:not(.mermaid-container *):not(.diagram-wrapper *),
+.dark .mermaid-container,
+.dark .diagram-wrapper,
+[data-theme="dark"] .mermaid-container,
+[data-theme="dark"] .diagram-wrapper,
+.diagram-theme-dark,
+.diagram-theme-dark .mermaid-container,
+.diagram-theme-dark .mermaid-view,
 @media (prefers-color-scheme: dark) {
   .note-content .mermaid:not(.mermaid-container *):not(.diagram-wrapper *),
   .note-content .mermaid-container,
@@ -640,7 +660,14 @@ svg.mermaid .noteText > tspan {
     box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
     border-color: #334155;
   }
+}
 
+.dark .mermaid-canvas svg,
+.dark .mermaid-container svg,
+.dark .mermaid svg,
+[data-theme="dark"] .mermaid svg,
+.diagram-theme-dark svg,
+@media (prefers-color-scheme: dark) {
   .mermaid-canvas svg,
   .mermaid-container svg,
   .mermaid svg,
@@ -648,15 +675,56 @@ svg.mermaid .noteText > tspan {
   svg.mermaid-svg {
     filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.35));
   }
+}
 
+/* Sequence diagram actor participant boxes in dark mode - high contrast */
+.dark .mermaid-canvas svg .actor,
+.dark .mermaid-container svg .actor,
+.dark .mermaid svg .actor,
+.dark svg.mermaid .actor,
+[data-theme="dark"] .mermaid-canvas svg .actor,
+[data-theme="dark"] .mermaid svg .actor,
+.diagram-theme-dark svg .actor,
+.diagram-theme-dark .actor,
+@media (prefers-color-scheme: dark) {
   .mermaid-canvas svg .actor,
   .mermaid-container svg .actor,
   .mermaid svg .actor,
   svg.mermaid .actor {
     fill: #1e293b !important;
-    stroke: #60a5fa !important;
+    stroke: #38bdf8 !important;
+    stroke-width: 2px !important;
   }
+}
+.dark .mermaid-canvas svg .actor,
+.dark .mermaid-container svg .actor,
+.dark .mermaid svg .actor,
+.dark svg.mermaid .actor,
+[data-theme="dark"] .mermaid-canvas svg .actor,
+[data-theme="dark"] .mermaid svg .actor,
+.diagram-theme-dark svg .actor,
+.diagram-theme-dark .actor {
+  fill: #1e293b !important;
+  stroke: #38bdf8 !important;
+  stroke-width: 2px !important;
+}
 
+/* Sequence diagram participant label text in dark mode - bright white for maximum accessibility */
+.dark .mermaid-canvas svg text.actor,
+.dark .mermaid-canvas svg text.actor > tspan,
+.dark .mermaid-container svg text.actor,
+.dark .mermaid-container svg text.actor > tspan,
+.dark .mermaid svg text.actor,
+.dark .mermaid svg text.actor > tspan,
+.dark svg.mermaid text.actor,
+.dark svg.mermaid text.actor > tspan,
+[data-theme="dark"] .mermaid-canvas svg text.actor,
+[data-theme="dark"] .mermaid-canvas svg text.actor > tspan,
+.diagram-theme-dark svg text.actor,
+.diagram-theme-dark svg text.actor > tspan,
+.diagram-theme-dark text.actor,
+.diagram-theme-dark text.actor > tspan,
+@media (prefers-color-scheme: dark) {
   .mermaid-canvas svg text.actor,
   .mermaid-canvas svg text.actor > tspan,
   .mermaid-container svg text.actor,
@@ -665,17 +733,63 @@ svg.mermaid .noteText > tspan {
   .mermaid svg text.actor > tspan,
   svg.mermaid text.actor,
   svg.mermaid text.actor > tspan {
-    fill: #f8fafc !important;
-    color: #f8fafc !important;
+    fill: #ffffff !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
   }
+}
+.dark .mermaid-canvas svg text.actor,
+.dark .mermaid-canvas svg text.actor > tspan,
+.dark .mermaid-container svg text.actor,
+.dark .mermaid-container svg text.actor > tspan,
+.dark .mermaid svg text.actor,
+.dark .mermaid svg text.actor > tspan,
+.dark svg.mermaid text.actor,
+.dark svg.mermaid text.actor > tspan,
+[data-theme="dark"] .mermaid-canvas svg text.actor,
+[data-theme="dark"] .mermaid-canvas svg text.actor > tspan,
+.diagram-theme-dark svg text.actor,
+.diagram-theme-dark svg text.actor > tspan,
+.diagram-theme-dark text.actor,
+.diagram-theme-dark text.actor > tspan {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
 
+/* Lifelines and message arrows in dark mode */
+.dark .mermaid-canvas svg .actor-line,
+.dark .mermaid-container svg .actor-line,
+.dark .mermaid svg .actor-line,
+.dark svg.mermaid .actor-line,
+.diagram-theme-dark svg .actor-line,
+@media (prefers-color-scheme: dark) {
   .mermaid-canvas svg .actor-line,
   .mermaid-container svg .actor-line,
   .mermaid svg .actor-line,
   svg.mermaid .actor-line {
     stroke: #64748b !important;
   }
+}
+.dark .mermaid-canvas svg .actor-line,
+.dark .mermaid-container svg .actor-line,
+.dark .mermaid svg .actor-line,
+.dark svg.mermaid .actor-line,
+.diagram-theme-dark svg .actor-line {
+  stroke: #64748b !important;
+}
 
+.dark .mermaid-canvas svg .messageLine0,
+.dark .mermaid-canvas svg .messageLine1,
+.dark .mermaid-container svg .messageLine0,
+.dark .mermaid-container svg .messageLine1,
+.dark .mermaid svg .messageLine0,
+.dark .mermaid svg .messageLine1,
+.dark svg.mermaid .messageLine0,
+.dark svg.mermaid .messageLine1,
+.diagram-theme-dark svg .messageLine0,
+.diagram-theme-dark svg .messageLine1,
+@media (prefers-color-scheme: dark) {
   .mermaid-canvas svg .messageLine0,
   .mermaid-canvas svg .messageLine1,
   .mermaid-container svg .messageLine0,
@@ -686,7 +800,27 @@ svg.mermaid .noteText > tspan {
   svg.mermaid .messageLine1 {
     stroke: #94a3b8 !important;
   }
+}
+.dark .mermaid-canvas svg .messageLine0,
+.dark .mermaid-canvas svg .messageLine1,
+.dark .mermaid-container svg .messageLine0,
+.dark .mermaid-container svg .messageLine1,
+.dark .mermaid svg .messageLine0,
+.dark .mermaid svg .messageLine1,
+.dark svg.mermaid .messageLine0,
+.dark svg.mermaid .messageLine1,
+.diagram-theme-dark svg .messageLine0,
+.diagram-theme-dark svg .messageLine1 {
+  stroke: #94a3b8 !important;
+}
 
+/* Sequence diagram message text in dark mode */
+.dark .mermaid-canvas svg .messageText,
+.dark .mermaid-container svg .messageText,
+.dark .mermaid svg .messageText,
+.dark svg.mermaid .messageText,
+.diagram-theme-dark svg .messageText,
+@media (prefers-color-scheme: dark) {
   .mermaid-canvas svg .messageText,
   .mermaid-container svg .messageText,
   .mermaid svg .messageText,
@@ -694,7 +828,23 @@ svg.mermaid .noteText > tspan {
     fill: #f1f5f9 !important;
     color: #f1f5f9 !important;
   }
+}
+.dark .mermaid-canvas svg .messageText,
+.dark .mermaid-container svg .messageText,
+.dark .mermaid svg .messageText,
+.dark svg.mermaid .messageText,
+.diagram-theme-dark svg .messageText {
+  fill: #f1f5f9 !important;
+  color: #f1f5f9 !important;
+}
 
+/* Note boxes in dark mode */
+.dark .mermaid-canvas svg .note,
+.dark .mermaid-container svg .note,
+.dark .mermaid svg .note,
+.dark svg.mermaid .note,
+.diagram-theme-dark svg .note,
+@media (prefers-color-scheme: dark) {
   .mermaid-canvas svg .note,
   .mermaid-container svg .note,
   .mermaid svg .note,
@@ -702,7 +852,27 @@ svg.mermaid .noteText > tspan {
     fill: #292524 !important;
     stroke: #ca8a04 !important;
   }
+}
+.dark .mermaid-canvas svg .note,
+.dark .mermaid-container svg .note,
+.dark .mermaid svg .note,
+.dark svg.mermaid .note,
+.diagram-theme-dark svg .note {
+  fill: #292524 !important;
+  stroke: #ca8a04 !important;
+}
 
+.dark .mermaid-canvas svg .noteText,
+.dark .mermaid-canvas svg .noteText > tspan,
+.dark .mermaid-container svg .noteText,
+.dark .mermaid-container svg .noteText > tspan,
+.dark .mermaid svg .noteText,
+.dark .mermaid svg .noteText > tspan,
+.dark svg.mermaid .noteText,
+.dark svg.mermaid .noteText > tspan,
+.diagram-theme-dark svg .noteText,
+.diagram-theme-dark svg .noteText > tspan,
+@media (prefers-color-scheme: dark) {
   .mermaid-canvas svg .noteText,
   .mermaid-canvas svg .noteText > tspan,
   .mermaid-container svg .noteText,
@@ -714,7 +884,28 @@ svg.mermaid .noteText > tspan {
     fill: #fef08a !important;
     color: #fef08a !important;
   }
+}
+.dark .mermaid-canvas svg .noteText,
+.dark .mermaid-canvas svg .noteText > tspan,
+.dark .mermaid-container svg .noteText,
+.dark .mermaid-container svg .noteText > tspan,
+.dark .mermaid svg .noteText,
+.dark .mermaid svg .noteText > tspan,
+.dark svg.mermaid .noteText,
+.dark svg.mermaid .noteText > tspan,
+.diagram-theme-dark svg .noteText,
+.diagram-theme-dark svg .noteText > tspan {
+  fill: #fef08a !important;
+  color: #fef08a !important;
+}
 
+/* Floating Zoom overlay */
+.dark .note-content .mermaid-zoom-overlay,
+.dark .mermaid-zoom-overlay,
+.dark .mermaid-zoom-badge,
+[data-theme="dark"] .mermaid-zoom-badge,
+.diagram-theme-dark .mermaid-zoom-badge,
+@media (prefers-color-scheme: dark) {
   .note-content .mermaid-zoom-overlay,
   .mermaid-zoom-overlay,
   .mermaid-zoom-badge {
@@ -1202,16 +1393,35 @@ svg.mermaid .noteText > tspan {
   }
 }
 
-/* File Content Styling: Always remain crisp, legible light theme even when application is in dark mode */
+/* File Content Styling: Adapts gracefully to global theme (Light or Dark mode) */
 .markdown-preview-container,
 .markdown-body,
 .file-content-stage,
 .file-content-canvas {
-  color-scheme: light !important;
-  background-color: #ffffff !important;
-  color: #1f2328 !important;
-  border-color: #cbd5e1 !important;
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03) !important;
+  color-scheme: light;
+  background-color: #ffffff;
+  color: #1f2328;
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+}
+
+.dark .markdown-preview-container,
+.dark .markdown-body,
+.dark .file-content-stage,
+.dark .file-content-canvas,
+.markdown-preview-container.dark,
+.markdown-body.dark,
+[data-theme="dark"] .markdown-preview-container,
+[data-theme="dark"] .markdown-body,
+[data-theme="dark"] .file-content-stage,
+[data-theme="dark"] .file-content-canvas,
+html.dark .markdown-preview-container,
+html.dark .markdown-body {
+  color-scheme: dark !important;
+  background-color: #0c1015 !important;
+  color: #f1f5f9 !important;
+  border-color: #1f2733 !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4), 0 2px 6px -1px rgba(0, 0, 0, 0.2) !important;
 }
 
 /* Monospace font families for code blocks inside markdown preview */
@@ -1239,6 +1449,14 @@ svg.mermaid .noteText > tspan {
   line-height: 1.6;
 }
 
+.dark .markdown-preview-container pre:not(.mermaid):not(.mermaid-raw-source),
+.markdown-preview-container.dark pre:not(.mermaid):not(.mermaid-raw-source),
+[data-theme="dark"] .markdown-preview-container pre:not(.mermaid):not(.mermaid-raw-source) {
+  background-color: #161b22 !important;
+  color: #e6edf3 !important;
+  border-color: #30363d !important;
+}
+
 /* Inline code tags inside markdown preview */
 .markdown-preview-container code:not(pre code) {
   padding: 0.2rem 0.45rem;
@@ -1248,6 +1466,14 @@ svg.mermaid .noteText > tspan {
   background-color: #f1f5f9;
   color: #0369a1;
   border: 1px solid #e2e8f0;
+}
+
+.dark .markdown-preview-container code:not(pre code),
+.markdown-preview-container.dark code:not(pre code),
+[data-theme="dark"] .markdown-preview-container code:not(pre code) {
+  background-color: #1e293b !important;
+  color: #38bdf8 !important;
+  border-color: #334155 !important;
 }
 
 /* Horizontal overflow scrolling & graceful scaling for complex architecture diagrams & sequence charts */

@@ -32,6 +32,10 @@ interface BrowserHtmlFrameProps {
   cssMode?: 'global' | 'none' | 'custom';
   customCss?: string;
   customCssFileName?: string;
+  theme?: 'light' | 'dark';
+  isLoading?: boolean;
+  contentSize?: number;
+  topicName?: string;
   onScroll?: (scrollTop: number, scrollHeight: number, clientHeight: number, progress: number) => void;
   onHeadingsExtracted?: (headings: { id: string; text: string; level: number }[]) => void;
   onActiveHeadingChange?: (id: string) => void;
@@ -50,6 +54,10 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
       cssMode,
       customCss,
       customCssFileName,
+      theme,
+      isLoading = false,
+      contentSize,
+      topicName,
       onScroll,
       onHeadingsExtracted,
       onActiveHeadingChange,
@@ -60,6 +68,42 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const [isLoaded, setIsLoaded] = useState(false);
     const [compiledHtml, setCompiledHtml] = useState<string>('');
+
+    useEffect(() => {
+      setIsLoaded(false);
+    }, [chapterId]);
+
+    // Dynamically detect parent document theme when theme prop is not explicitly given
+    const [parentIsDark, setParentIsDark] = useState<boolean>(() => {
+      if (typeof document !== 'undefined') {
+        return document.documentElement.classList.contains('dark');
+      }
+      return false;
+    });
+
+    useEffect(() => {
+      const updateParentTheme = () => {
+        if (typeof document !== 'undefined') {
+          setParentIsDark(document.documentElement.classList.contains('dark'));
+        }
+      };
+      updateParentTheme();
+
+      const observer = new MutationObserver(() => {
+        updateParentTheme();
+      });
+      if (typeof document !== 'undefined' && document.documentElement) {
+        observer.observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ['class'],
+        });
+      }
+
+      return () => observer.disconnect();
+    }, []);
+
+    const isDarkMode = theme ? theme === 'dark' : parentIsDark;
+
     const [globalCss, setGlobalCss] = useState<string>(() => {
       const stored = getStoredGlobalCss();
       return stored && !stored.includes('/* test upload */') ? stored : DEFAULT_NOTEBOOK_THEME_CSS;
@@ -105,7 +149,13 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
       }
 
       if (isMarkdownContent(htmlContent)) {
-        convertMarkdownToHtml(htmlContent, { title }).then((res) => {
+        try {
+          const syncHtml = convertMarkdownToHtmlSync(htmlContent, { title, isDark: isDarkMode });
+          setCompiledHtml(syncHtml);
+        } catch {
+          setCompiledHtml(htmlContent);
+        }
+        convertMarkdownToHtml(htmlContent, { title, isDark: isDarkMode }).then((res) => {
           if (isMounted) {
             setCompiledHtml(res);
           }
@@ -117,7 +167,7 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
       return () => {
         isMounted = false;
       };
-    }, [htmlContent, title]);
+    }, [htmlContent, title, isDarkMode]);
 
     // Prepare complete, valid HTML document with native browser rendering and Mermaid support
     const preparedHtml = useMemo(() => {
@@ -125,7 +175,7 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
       if (!source && htmlContent) {
         if (isMarkdownContent(htmlContent)) {
           try {
-            source = convertMarkdownToHtmlSync(htmlContent, { title });
+            source = convertMarkdownToHtmlSync(htmlContent, { title, isDark: isDarkMode });
           } catch {
             source = htmlContent;
           }
@@ -136,7 +186,13 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
       source = source || '';
       let clean = sanitizeHtml(source);
       if (!clean) {
-        return `<!DOCTYPE html><html><body style="font-family:system-ui;padding:2rem;color:#888;">No content available.</body></html>`;
+        const bg = isDarkMode ? '#0c1015' : '#ffffff';
+        const fg = isDarkMode ? '#94a3b8' : '#64748b';
+        const sub = isDarkMode ? '#475569' : '#94a3b8';
+        if (isLoading) {
+          return `<!DOCTYPE html><html class="${isDarkMode ? 'dark' : ''}" style="background:${bg};"><body style="margin:0;background:${bg};"></body></html>`;
+        }
+        return `<!DOCTYPE html><html class="${isDarkMode ? 'dark' : ''}" style="color-scheme:${isDarkMode ? 'dark' : 'light'};background:${bg};"><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;padding:3rem 2rem;color:${fg};background:${bg};margin:0;display:flex;align-items:center;justify-content:center;min-height:60vh;"><div style="text-align:center;max-width:360px;"><div style="font-size:14px;font-weight:600;color:${fg};margin-bottom:6px;">This chapter has no content yet</div><div style="font-size:12.5px;color:${sub};">Write or paste Markdown (.md) or HTML in the editor to get started.</div></div></body></html>`;
       }
 
       // Strip broken local script tags that 404 or conflict with our bundled engine
@@ -156,8 +212,7 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
         clean.includes("class='markdown-body'") ||
         /<body[^>]*class=["'][^"']*markdown-body/i.test(clean);
 
-      const effectiveMode: 'global' | 'none' | 'custom' =
-        isMd ? 'none' : (cssMode || (customCss ? 'custom' : includeGlobalCss === false ? 'none' : 'global'));
+      const effectiveMode: 'global' | 'none' = isMd ? 'none' : 'global';
 
       // Injected helper script for communication with host app + Mermaid dynamic rendering
       const injectedScript = `
@@ -172,7 +227,7 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
         </script>
         <style>
           ${MERMAID_CODE_STYLES}
-          ${isMd ? getMarkdownStyles() : ''}
+          ${isMd ? getMarkdownStyles(isDarkMode) : ''}
           .github-mermaid-block.is-fullscreen,
           .diagram-wrapper.is-fullscreen,
           .mermaid-container.is-fullscreen,
@@ -193,8 +248,8 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
             padding: 0 !important;
             border-radius: 0 !important;
             border: none !important;
-            background: #ffffff !important;
-            background-color: #ffffff !important;
+            background: ${isDarkMode ? '#0d1117' : '#ffffff'} !important;
+            background-color: ${isDarkMode ? '#0d1117' : '#ffffff'} !important;
             background-image: none !important;
             display: flex !important;
             flex-direction: column !important;
@@ -212,8 +267,8 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
             border-left: none !important;
             border-right: none !important;
             border-top: none !important;
-            border-bottom: 1px solid #e2e8f0 !important;
-            background: #ffffff !important;
+            border-bottom: 1px solid ${isDarkMode ? '#30363d' : '#e2e8f0'} !important;
+            background: ${isDarkMode ? '#161b22' : '#ffffff'} !important;
             box-sizing: border-box !important;
             padding: 0 20px !important;
           }
@@ -231,8 +286,8 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
           .mermaid-container.is-fullscreen .mermaid-viewport,
           .mermaid-container.is-fullscreen .mermaid-canvas {
             background-image: none !important;
-            background: #ffffff !important;
-            background-color: #ffffff !important;
+            background: ${isDarkMode ? '#0d1117' : '#ffffff'} !important;
+            background-color: ${isDarkMode ? '#0d1117' : '#ffffff'} !important;
             border: none !important;
             box-shadow: none !important;
           }
@@ -278,15 +333,49 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
             align-items: center !important;
             justify-content: center !important;
             margin: auto !important;
+          }
           .diagram-wrapper {
             position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
+            width: 100%;
             margin: 32px 0;
-            background: #ffffff;
-            border: 1.5px solid #cbd5e1;
+            background: ${isDarkMode ? '#0d1117' : '#ffffff'};
+            border: 1.5px solid ${isDarkMode ? '#30363d' : '#cbd5e1'};
             border-radius: 16px;
             box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
             overflow: hidden;
             transition: all 0.25s ease;
+          }
+          .diagram-header {
+            position: relative !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+            padding: 10px 16px !important;
+            border-bottom: 1.5px solid ${isDarkMode ? '#30363d' : '#cbd5e1'} !important;
+            background: ${isDarkMode ? '#161b22' : '#f8fafc'} !important;
+            gap: 12px !important;
+            flex-wrap: wrap !important;
+            transition: all 0.2s ease !important;
+          }
+          .diagram-title-group {
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+          }
+          .diagram-toolbar {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 3px !important;
+            margin-left: auto !important;
+            flex-shrink: 0 !important;
           }
           .mermaid-viewport {
             position: relative;
@@ -295,7 +384,7 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
             height: auto;
             overflow: hidden;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
             cursor: grab;
             user-select: none;
@@ -310,9 +399,9 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
           }
           .mermaid-canvas {
             display: inline-flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
-            transform-origin: center center;
+            transform-origin: top center;
             transition: transform 0.08s ease-out;
             will-change: transform;
           }
@@ -379,6 +468,7 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
             margin: 0 auto !important;
             min-height: auto !important;
             width: 100% !important;
+          }
           .mermaid-canvas svg {
             max-width: none !important;
             height: auto !important;
@@ -423,7 +513,7 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
             fill: transparent !important;
             stroke: none !important;
           }
-          /* Sequence Diagram High-Contrast Polish (Light Mode) */
+          /* Sequence Diagram High-Contrast Polish (Light Mode Default) */
           .mermaid-canvas svg .actor,
           .mermaid-container svg .actor,
           .mermaid svg .actor,
@@ -449,6 +539,7 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
           }
           .mermaid-canvas svg text.actor,
           .mermaid-canvas svg text.actor > tspan,
+          .mermaid-canvas svg text.actor tspan,
           .mermaid-container svg text.actor,
           .mermaid-container svg text.actor > tspan,
           .mermaid svg text.actor,
@@ -516,116 +607,125 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
             font-weight: 600 !important;
             font-size: 12.5px !important;
           }
-          /* Diagram styles: always light */
-          @media (prefers-color-scheme: dark-disabled) {
-            .mermaid-canvas svg .actor,
-            .mermaid-container svg .actor,
-            .mermaid svg .actor,
-            svg.mermaid .actor {
-              fill: #1e293b !important;
-              stroke: #60a5fa !important;
-            }
-            .mermaid-canvas svg text.actor,
-            .mermaid-canvas svg text.actor > tspan,
-            .mermaid-container svg text.actor,
-            .mermaid-container svg text.actor > tspan,
-            .mermaid svg text.actor,
-            .mermaid svg text.actor > tspan,
-            svg.mermaid text.actor,
-            svg.mermaid text.actor > tspan {
-              fill: #f8fafc !important;
-              color: #f8fafc !important;
-            }
-            .mermaid-canvas svg .actor-line,
-            .mermaid-container svg .actor-line,
-            .mermaid svg .actor-line,
-            svg.mermaid .actor-line {
-              stroke: #64748b !important;
-            }
-            .mermaid-canvas svg .messageLine0,
-            .mermaid-canvas svg .messageLine1,
-            .mermaid-container svg .messageLine0,
-            .mermaid-container svg .messageLine1,
-            .mermaid svg .messageLine0,
-            .mermaid svg .messageLine1,
-            svg.mermaid .messageLine0,
-            svg.mermaid .messageLine1 {
-              stroke: #94a3b8 !important;
-            }
-            .mermaid-canvas svg .messageText,
-            .mermaid-container svg .messageText,
-            .mermaid svg .messageText,
-            svg.mermaid .messageText {
-              fill: #f1f5f9 !important;
-              color: #f1f5f9 !important;
-            }
-            .mermaid-canvas svg .note,
-            .mermaid-container svg .note,
-            .mermaid svg .note,
-            svg.mermaid .note {
-              fill: #292524 !important;
-              stroke: #ca8a04 !important;
-            }
-            .mermaid-canvas svg .noteText,
-            .mermaid-canvas svg .noteText > tspan,
-            .mermaid-container svg .noteText,
-            .mermaid-container svg .noteText > tspan,
-            .mermaid svg .noteText,
-            .mermaid svg .noteText > tspan,
-            svg.mermaid .noteText,
-            svg.mermaid .noteText > tspan {
-              fill: #fef08a !important;
-              color: #fef08a !important;
-            }
-            .mermaid-canvas svg .node rect,
-            .mermaid-container svg .node rect,
-            .mermaid svg .node rect,
-            svg.mermaid .node rect {
-              fill: #1e293b !important;
-              stroke: #60a5fa !important;
-            }
-            .mermaid-canvas svg .node text,
-            .mermaid-container svg .node text,
-            .mermaid svg .node text,
-            svg.mermaid .node text {
-              fill: #f8fafc !important;
-              color: #f8fafc !important;
-            }
-          }
+
+          /* Dark Mode & Theme Control Polish (High-Contrast Accessibility) */
           .dark .mermaid-canvas svg .actor,
           .dark .mermaid-container svg .actor,
           .dark .mermaid svg .actor,
-          [data-theme="dark"] .mermaid-canvas svg .actor {
+          .dark svg.mermaid .actor,
+          .dark svg.mermaid-svg .actor,
+          [data-theme="dark"] svg .actor,
+          .diagram-theme-dark svg .actor {
             fill: #1e293b !important;
-            stroke: #60a5fa !important;
+            stroke: #38bdf8 !important;
+            stroke-width: 2px !important;
           }
           .dark .mermaid-canvas svg text.actor,
+          .dark .mermaid-canvas svg text.actor > tspan,
+          .dark .mermaid-canvas svg text.actor tspan,
           .dark .mermaid-container svg text.actor,
+          .dark .mermaid-container svg text.actor > tspan,
+          .dark .mermaid-container svg text.actor tspan,
           .dark .mermaid svg text.actor,
-          [data-theme="dark"] .mermaid-canvas svg text.actor {
-            fill: #f8fafc !important;
-            color: #f8fafc !important;
+          .dark .mermaid svg text.actor > tspan,
+          .dark .mermaid svg text.actor tspan,
+          .dark svg.mermaid text.actor,
+          .dark svg.mermaid text.actor > tspan,
+          .dark svg.mermaid-svg text.actor,
+          .dark svg.mermaid-svg text.actor > tspan,
+          [data-theme="dark"] svg text.actor,
+          [data-theme="dark"] svg text.actor > tspan,
+          [data-theme="dark"] svg text.actor tspan,
+          .diagram-theme-dark svg text.actor,
+          .diagram-theme-dark svg text.actor > tspan,
+          .diagram-theme-dark svg text.actor tspan,
+          .diagram-theme-dark text.actor,
+          .diagram-theme-dark text.actor > tspan {
+            fill: #ffffff !important;
+            color: #ffffff !important;
+            font-weight: 700 !important;
+            font-size: 13.5px !important;
+          }
+          .dark .mermaid-canvas svg .actor-line,
+          .dark .mermaid-container svg .actor-line,
+          .dark .mermaid svg .actor-line,
+          .dark svg.mermaid .actor-line,
+          [data-theme="dark"] svg .actor-line,
+          .diagram-theme-dark svg .actor-line {
+            stroke: #64748b !important;
+            stroke-width: 1.5px !important;
+            stroke-dasharray: 4, 4 !important;
           }
           .dark .mermaid-canvas svg .messageText,
           .dark .mermaid-container svg .messageText,
           .dark .mermaid svg .messageText,
-          [data-theme="dark"] .mermaid-canvas svg .messageText {
-            fill: #f1f5f9 !important;
-            color: #f1f5f9 !important;
+          .dark svg.mermaid .messageText,
+          [data-theme="dark"] svg .messageText,
+          .diagram-theme-dark svg .messageText {
+            fill: #f8fafc !important;
+            color: #f8fafc !important;
+            font-weight: 600 !important;
+          }
+          .dark .mermaid-canvas svg .messageLine0,
+          .dark .mermaid-canvas svg .messageLine1,
+          .dark .mermaid-container svg .messageLine0,
+          .dark .mermaid-container svg .messageLine1,
+          .dark .mermaid svg .messageLine0,
+          .dark .mermaid svg .messageLine1,
+          [data-theme="dark"] svg .messageLine0,
+          [data-theme="dark"] svg .messageLine1,
+          .diagram-theme-dark svg .messageLine0,
+          .diagram-theme-dark svg .messageLine1 {
+            stroke: #94a3b8 !important;
+            stroke-width: 1.75px !important;
+          }
+          .dark .mermaid-canvas svg .sequenceNumber,
+          [data-theme="dark"] svg .sequenceNumber,
+          .diagram-theme-dark svg .sequenceNumber {
+            fill: #0284c7 !important;
+            stroke: #38bdf8 !important;
+            color: #ffffff !important;
           }
           .dark .mermaid-canvas svg .note,
           .dark .mermaid-container svg .note,
           .dark .mermaid svg .note,
-          [data-theme="dark"] .mermaid-canvas svg .note {
-            fill: #292524 !important;
-            stroke: #ca8a04 !important;
+          [data-theme="dark"] .mermaid-canvas svg .note,
+          .diagram-theme-dark svg .note {
+            fill: #272115 !important;
+            stroke: #d29922 !important;
           }
           .dark .mermaid-canvas svg .noteText,
+          .dark .mermaid-canvas svg .noteText > tspan,
           .dark .mermaid-container svg .noteText,
+          .dark .mermaid-container svg .noteText > tspan,
           .dark .mermaid svg .noteText,
-          [data-theme="dark"] .mermaid-canvas svg .noteText {
-            fill: #fef08a !important;
-            color: #fef08a !important;
+          .dark .mermaid svg .noteText > tspan,
+          [data-theme="dark"] .mermaid-canvas svg .noteText,
+          [data-theme="dark"] .mermaid-canvas svg .noteText > tspan,
+          .diagram-theme-dark svg .noteText,
+          .diagram-theme-dark svg .noteText > tspan {
+            fill: #f0e6c8 !important;
+            color: #f0e6c8 !important;
+          }
+
+          /* Light Mode Overrides for diagrams toggled to light */
+          .diagram-theme-light svg .actor {
+            fill: #ffffff !important;
+            stroke: #2563eb !important;
+          }
+          .diagram-theme-light svg text.actor,
+          .diagram-theme-light svg text.actor > tspan,
+          .diagram-theme-light svg text.actor tspan {
+            fill: #0f172a !important;
+            color: #0f172a !important;
+          }
+          .diagram-theme-light svg .messageText {
+            fill: #0f172a !important;
+            color: #0f172a !important;
+          }
+          .diagram-theme-light svg .messageLine0,
+          .diagram-theme-light svg .messageLine1 {
+            stroke: #334155 !important;
           }
           /* Floating Zoom Control Overlay for Mermaid Diagrams in .note-content and across notes */
           .note-content .mermaid-zoom-overlay,
@@ -1520,6 +1620,7 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
 
               function updateTransform() {
                 canvas.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + scale + ')';
+                canvas.style.transformOrigin = 'top center';
                 var pct = Math.round(scale * 100) + '%';
                 var badges = wrap.querySelectorAll('.zoom-val, .zoom-text');
                 badges.forEach(function(b) { b.textContent = pct; });
@@ -1721,6 +1822,7 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
               var btnReset = wrap.querySelector('.btn-diag-reset, .btn-mermaid-reset');
               var btnFit = wrap.querySelector('.btn-diag-fit, .btn-mermaid-fit');
               var btnCopy = wrap.querySelector('.btn-diag-copy, .btn-mermaid-copy');
+              var btnTheme = wrap.querySelector('.btn-diag-theme, .btn-mermaid-theme');
               var btnExpand = wrap.querySelector('.btn-diag-expand, .btn-mermaid-expand');
 
               if (btnZoomIn) {
@@ -1764,6 +1866,75 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
                       btnCopy.innerHTML = '<span style="color:#10b981;font-weight:700;">✓ Copied</span>';
                       setTimeout(function() { btnCopy.innerHTML = orig; }, 2000);
                     });
+                  }
+                });
+              }
+              if (btnTheme) {
+                btnTheme.addEventListener('click', function(e) {
+                  e.stopPropagation();
+                  var isDocDark = document.documentElement.classList.contains('dark') || document.body.classList.contains('dark') || document.documentElement.getAttribute('data-theme') === 'dark';
+                  var isCurrentlyDark = wrap.classList.contains('diagram-theme-dark')
+                    ? true
+                    : wrap.classList.contains('diagram-theme-light')
+                    ? false
+                    : isDocDark;
+                  var nextDark = !isCurrentlyDark;
+                  wrap.classList.remove('diagram-theme-dark', 'diagram-theme-light');
+                  wrap.classList.add(nextDark ? 'diagram-theme-dark' : 'diagram-theme-light');
+                  wrap.setAttribute('data-diagram-theme', nextDark ? 'dark' : 'light');
+
+                  var allThemeBtns = wrap.querySelectorAll('.btn-diag-theme, .btn-mermaid-theme');
+                  allThemeBtns.forEach(function(b) {
+                    b.innerHTML = '<span class="theme-icon" aria-hidden="true">' + (nextDark ? '🌙' : '☀️') + '</span> <span class="theme-text">' + (nextDark ? 'Dark' : 'Light') + '</span>';
+                    b.setAttribute('title', 'Current: ' + (nextDark ? 'Dark' : 'Light') + ' Mode. Click to toggle.');
+                  });
+
+                  var codeToRender = rawCode || wrap.getAttribute('data-raw-mermaid') || '';
+                  if (window.mermaid && codeToRender) {
+                    try {
+                      window.mermaid.initialize({
+                        startOnLoad: false,
+                        theme: nextDark ? 'dark' : 'default',
+                        securityLevel: 'loose',
+                        themeVariables: nextDark ? {
+                          darkMode: true,
+                          background: '#0d1117',
+                          primaryColor: '#1e293b',
+                          primaryTextColor: '#f8fafc',
+                          primaryBorderColor: '#38bdf8',
+                          actorBkg: '#1e293b',
+                          actorBorder: '#38bdf8',
+                          actorTextColor: '#ffffff',
+                          actorLineColor: '#38bdf8',
+                          signalColor: '#38bdf8',
+                          signalTextColor: '#f8fafc'
+                        } : {
+                          darkMode: false,
+                          background: '#ffffff',
+                          primaryColor: '#f0f4f8',
+                          primaryTextColor: '#0f172a',
+                          primaryBorderColor: '#cbd5e1',
+                          actorBkg: '#f0f4f8',
+                          actorBorder: '#64748b',
+                          actorTextColor: '#0f172a'
+                        }
+                      });
+                      var dId = 'diag-toggle-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+                      window.mermaid.render(dId, codeToRender).then(function(res) {
+                        canvas.innerHTML = res.svg;
+                        var s = canvas.querySelector('svg');
+                        if (s) {
+                          s.classList.remove('mermaid');
+                          s.classList.add('mermaid-svg');
+                          s.style.background = 'transparent';
+                        }
+                        updateTransform();
+                      }).catch(function(err) {
+                        console.warn('Diagram re-render error:', err);
+                      });
+                    } catch (err) {
+                      console.warn('Mermaid re-render err:', err);
+                    }
                   }
                 });
               }
@@ -1821,9 +1992,11 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
                 }
               });
 
-              // Fit neatly into the specific existing height on mount without altering document layout
-              setTimeout(function() { fitDiagramToScreen(false); }, 40);
-              setTimeout(function() { fitDiagramToScreen(false); }, 200);
+              // Initialize diagram at initial position (100% 1:1, pan 0, 0)
+              scale = 1.0;
+              panX = 0;
+              panY = 0;
+              updateTransform();
 
               // Floating zoom control overlay (plus, minus, fit, reset, fullscreen)
               var overlay = container.querySelector('.mermaid-zoom-overlay, .mermaid-zoom-badge');
@@ -2092,6 +2265,7 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
                     '  <button type="button" class="diagram-btn btn-diag-reset" title="Reset zoom to 100% (1:1)" aria-label="Reset zoom"><span aria-hidden="true">↺</span> <span>Reset</span></button>',
                     '  <span class="diag-divider" aria-hidden="true"></span>',
                     '  <button type="button" class="diagram-btn btn-diag-copy" title="Copy Mermaid syntax" aria-label="Copy syntax"><span aria-hidden="true">📋 Copy</span></button>',
+                    '  <button type="button" class="diagram-btn btn-diag-theme btn-mermaid-theme" title="Toggle diagram theme: Dark / Light" aria-label="Toggle diagram theme"><span class="theme-icon" aria-hidden="true">🌓</span> <span class="theme-text">Theme</span></button>',
                     '  <button type="button" class="diagram-btn btn-diag-expand" title="Toggle Fullscreen" aria-label="Fullscreen"><span aria-hidden="true">⛶ Fullscreen</span></button>',
                     '</div>'
                   ].join('');
@@ -2510,35 +2684,57 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
       const fontLink = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">';
 
       let themeInjections = '';
-      if (!isMd && effectiveMode === 'custom') {
-        const customLink = customCssFileName
-          ? `<link rel="stylesheet" href="/api/css/${encodeURIComponent(customCssFileName)}">`
-          : '';
-        const customStyle = customCss
-          ? `<style id="note-custom-inline">${customCss}</style>`
-          : '';
-        themeInjections = [customLink, customStyle].filter(Boolean).join('\n');
-      } else if (!isMd && effectiveMode === 'global') {
+      if (!isMd) {
+        const themeLinkTag = `<link rel="stylesheet" href="/notes-theme.css">`;
         const themeInlineStyle = globalCss
           ? `<style id="notes-theme-inline">${globalCss}</style>`
           : '';
-        themeInjections = [fontLink, themeInlineStyle].filter(Boolean).join('\n');
+        themeInjections = [fontLink, themeLinkTag, themeInlineStyle].filter(Boolean).join('\n');
       }
 
       if (hasDocType || (hasHtmlTag && hasBodyTag)) {
         let fullDoc = clean;
 
-        if (effectiveMode !== 'global' || isMd) {
-          // If not in global theme mode or markdown, remove any notes-theme.css link tags
+        if (isMd) {
+          // If markdown, remove any notes-theme.css link tags
           fullDoc = fullDoc.replace(/<link\s+[^>]*href=["'][^"']*notes-theme\.css["'][^>]*>/gi, '');
         }
 
-        // Inject base tag and theme CSS into <head> if present
-        const lightEnforcer = `<meta name="color-scheme" content="light"><style id="light-theme-enforcer">:root, html, body { color-scheme: light !important; }</style>`;
-        const mdInjections = isMd
-          ? `${MARKDOWN_FONTS_HTML}\n<style id="markdown-styles-injected">${getMarkdownStyles()}</style>`
+        const mdThemeEnforcer = isMd
+          ? `<meta name="color-scheme" content="${isDarkMode ? 'dark' : 'light'}"><style id="theme-enforcer">
+  :root, html, body {
+    color-scheme: ${isDarkMode ? 'dark' : 'light'} !important;
+  }
+  ${isDarkMode ? `
+  html, body {
+    background-color: #0c1015 !important;
+    color: #f1f5f9 !important;
+  }
+  ` : `
+  html, body {
+    background-color: #ffffff;
+    color: #1c1e21;
+  }
+  `}
+</style>`
           : '';
-        const allInjections = [lightEnforcer, themeInjections, mdInjections].filter(Boolean).join('\n');
+        const mdInjections = isMd
+          ? `${MARKDOWN_FONTS_HTML}\n<style id="markdown-styles-injected">${getMarkdownStyles(isDarkMode)}</style>`
+          : '';
+        const allInjections = [mdThemeEnforcer, themeInjections, mdInjections].filter(Boolean).join('\n');
+
+        if (isMd && isDarkMode) {
+          if (/<html[^>]*class=["']/i.test(fullDoc)) {
+            fullDoc = fullDoc.replace(/(<html[^>]*class=["'])([^"']*)(["'])/i, '$1$2 dark$3');
+          } else if (/<html/i.test(fullDoc)) {
+            fullDoc = fullDoc.replace(/<html/i, '<html class="dark" data-theme="dark"');
+          }
+          if (/<body[^>]*class=["']/i.test(fullDoc)) {
+            fullDoc = fullDoc.replace(/(<body[^>]*class=["'])([^"']*)(["'])/i, '$1$2 dark$3');
+          } else if (/<body/i.test(fullDoc)) {
+            fullDoc = fullDoc.replace(/<body/i, '<body class="dark" data-theme="dark"');
+          }
+        }
 
         if (allInjections) {
           if (/<head[\s>]/i.test(fullDoc)) {
@@ -2559,68 +2755,37 @@ export const BrowserHtmlFrame = forwardRef<BrowserHtmlFrameRef, BrowserHtmlFrame
         return `${fullDoc}${injectedScript}`;
       }
 
-      // Raw snippet: wrap in a clean, modern HTML5 document
+      // Raw snippet: wrap in a clean, modern HTML5 document with global CSS applied directly for HTML
+      const hasNotebookWrapper = /class=["'][^"']*notebook-wrapper/i.test(clean);
       const bodyOpen = isMd
-        ? '<body class="markdown-body markdown-preview-container">'
-        : (effectiveMode === 'global' ? '<body class="note-content"><div class="note-content">' : '<body>');
+        ? `<body class="markdown-body markdown-preview-container ${isDarkMode ? 'dark' : ''}" data-theme="${isDarkMode ? 'dark' : 'light'}">`
+        : `<body class="note-content">${hasNotebookWrapper ? '<div class="note-content">' : '<div class="notebook-wrapper note-content">'}`;
       const bodyClose = isMd
         ? '</body>'
-        : (effectiveMode === 'global' ? '</div></body>' : '</body>');
+        : '</div></body>';
 
       return `<!DOCTYPE html>
-<html lang="en" style="color-scheme: light;">
+<html lang="en" class="${isMd && isDarkMode ? 'dark' : 'light'}" data-theme="${isMd && isDarkMode ? 'dark' : 'light'}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
   <title>${title || 'Note'}</title>
-  ${themeInjections}
   ${isMd ? MARKDOWN_FONTS_HTML : ''}
   <style>
-    ${isMd ? getMarkdownStyles() : `
-    :root, html, body {
-      color-scheme: light !important;
-    }
-    html, body {
-      margin: 0;
-      padding: 32px 24px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      line-height: 1.65;
-      color: #1c1e21;
-      background: #ffffff;
-      -webkit-font-smoothing: antialiased;
-    }
+    ${isMd ? getMarkdownStyles(isDarkMode) : `
     img { max-width: 100%; height: auto; border-radius: 8px; }
     svg { max-width: 100%; }
-    .anchor-link { color: #7d8590; text-decoration: none; opacity: 0; transition: opacity 0.15s ease; }
-    h1:hover .anchor-link, h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; color: #0969da; }
-    pre:not(.mermaid):not(.mermaid-raw-source) { background: #f6f8fa; color: #24292f; border: 1px solid #d0d7de; padding: 16px; border-radius: 10px; overflow-x: auto; }
     pre.mermaid, pre.mermaid-raw-source, div.mermaid, .mermaid { background: transparent !important; border: none !important; padding: 0 !important; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-    table { width: 100%; border-collapse: collapse; margin: 16px 0; }
-    th, td { border: 1px solid #d0d7de; padding: 8px 12px; }
-    th { background: #f6f8fa; color: #1f2328; }
-    td { color: #24292f; }
-    .mermaid-diagram-wrap {
-      margin: 1.5rem 0;
-      padding: 1.5rem;
-      border-radius: 14px;
-      border: 1px solid #d0d7de;
-      background: #ffffff;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      overflow-x: auto;
-    }
     `}
   </style>
+  ${themeInjections}
 </head>
 ${bodyOpen}
   ${clean}
   ${injectedScript}
 ${bodyClose}
 </html>`;
-    }, [compiledHtml, htmlContent, title, chapterId, globalCss, cssMode, includeGlobalCss, customCss, customCssFileName]);
+    }, [compiledHtml, htmlContent, title, chapterId, globalCss, cssMode, includeGlobalCss, customCss, customCssFileName, isDarkMode]);
 
     // Expose control methods to parent component
     useImperativeHandle(ref, () => ({
@@ -2894,16 +3059,73 @@ ${bodyClose}
       onReady?.();
     };
 
+    const showLoadingOverlay = isLoading || (Boolean(htmlContent) && !isLoaded);
+    const formattedSize =
+      contentSize && contentSize > 0
+        ? contentSize >= 1024
+          ? `${(contentSize / 1024).toFixed(1)} KB`
+          : `${contentSize} B`
+        : null;
+
     return (
-      <iframe
-        key={chapterId || title}
-        ref={iframeRef}
-        srcDoc={preparedHtml}
-        title={title}
-        className={`w-full h-full border-0 block bg-transparent ${className}`}
-        sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
-        onLoad={handleIframeLoad}
-      />
+      <div className={`relative w-full h-full overflow-hidden ${isDarkMode ? 'bg-[#0c1015]' : 'bg-white'} ${className}`}>
+        {showLoadingOverlay && (
+          <div
+            id="chapter-loading-spinner"
+            data-testid="chapter-loading-spinner"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+            aria-label={`Loading ${title}`}
+            className={`absolute inset-0 z-30 flex flex-col items-center justify-center p-6 select-none transition-opacity duration-150 ${
+              isDarkMode ? 'bg-[#0c1015] text-[#f1f5f9]' : 'bg-white text-[#1f2328]'
+            }`}
+          >
+            <div className="flex flex-col items-center text-center max-w-sm gap-3.5">
+              {/* Circular Spinner Ring */}
+              <div className="relative w-11 h-11 flex items-center justify-center">
+                <div
+                  className={`w-11 h-11 rounded-full border-[3px] animate-spin ${
+                    isDarkMode
+                      ? 'border-[#1e293b] border-t-[#38bdf8] border-r-[#38bdf8]'
+                      : 'border-[#e2e8f0] border-t-[#1877f2] border-r-[#1877f2]'
+                  }`}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <p
+                  className={`text-sm font-semibold tracking-tight truncate max-w-xs ${
+                    isDarkMode ? 'text-[#f8fafc]' : 'text-[#0f172a]'
+                  }`}
+                >
+                  {title && title !== 'Document' ? title : 'Loading chapter...'}
+                </p>
+                <p
+                  className={`text-xs flex items-center justify-center gap-1.5 ${
+                    isDarkMode ? 'text-[#94a3b8]' : 'text-[#64748b]'
+                  }`}
+                >
+                  <span>{isLoading ? 'Loading chapter notes...' : 'Rendering preview...'}</span>
+                  {formattedSize && (
+                    <span className="font-mono text-[11px] opacity-80">({formattedSize})</span>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <iframe
+          key={chapterId || title}
+          ref={iframeRef}
+          srcDoc={preparedHtml}
+          title={title}
+          className="w-full h-full border-0 block bg-transparent"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
+          onLoad={handleIframeLoad}
+        />
+      </div>
     );
   }
 );

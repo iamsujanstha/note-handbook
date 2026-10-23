@@ -262,13 +262,31 @@ export const MARKDOWN_FONTS_HTML = `<link rel="preconnect" href="https://fonts.g
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..800;1,8..60,400..800&display=swap" rel="stylesheet">`;
 
-export function getMarkdownStyles(): string {
+export function getMarkdownStyles(isDark: boolean = false): string {
+  const bg = isDark ? '#0c1015' : '#ffffff';
+  const text = isDark ? '#f1f5f9' : '#1f2328';
+  const textMuted = isDark ? '#94a3b8' : '#57606a';
+  const textSubtle = isDark ? '#64748b' : '#6e7781';
+  const heading = isDark ? '#f8fafc' : '#0f172a';
+  const headingBorder = isDark ? '#1f2733' : '#e2e8f0';
+  const border = isDark ? '#30363d' : '#d0d7de';
+  const bgSubtle = isDark ? '#161b22' : '#f6f8fa';
+  const linkColor = isDark ? '#58a6ff' : '#0969da';
+  const codeBg = isDark ? '#161b22' : '#eff1f3';
+  const codeText = isDark ? '#ff7b72' : '#cf222e';
+  const codeBorder = isDark ? '#30363d' : '#e1e4e8';
+  const codePreBg = isDark ? '#0d1117' : '#ffffff';
+  const codePreText = isDark ? '#e6edf3' : '#24292f';
+
   return `
     :root {
-      color-scheme: light !important;
+      color-scheme: ${isDark ? 'dark' : 'light'};
       --font-serif: 'Source Serif 4', 'Source Serif Pro', 'Charter', 'Bitstream Charter', 'Iowan Old Style', 'Merriweather', Georgia, serif;
       --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    }
+    :root.dark, [data-theme="dark"], html.dark, body.dark {
+      color-scheme: dark !important;
     }
     * {
       box-sizing: border-box;
@@ -279,20 +297,28 @@ export function getMarkdownStyles(): string {
       font-family: var(--font-sans);
       font-size: 15.5px;
       line-height: 1.72;
-      color: #1f2328;
-      background: #ffffff;
+      color: ${text};
+      background: ${bg};
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+    }
+    html.dark, body.dark, [data-theme="dark"] html, [data-theme="dark"] body {
+      color: #f1f5f9 !important;
+      background: #0c1015 !important;
     }
     .markdown-body {
       max-width: 880px;
       margin: 0 auto;
-      color: #1f2328;
-      background: #ffffff;
+      color: ${text};
+      background: ${bg};
+    }
+    .markdown-body.dark, .dark .markdown-body, [data-theme="dark"] .markdown-body {
+      color: #f1f5f9 !important;
+      background: #0c1015 !important;
     }
     h1, h2, h3, h4, h5, h6 {
       font-family: var(--font-serif);
-      color: #0f172a;
+      color: ${heading};
       font-weight: 700;
       line-height: 1.3;
       margin-top: 2.25rem;
@@ -300,13 +326,17 @@ export function getMarkdownStyles(): string {
       scroll-margin-top: 2rem;
       letter-spacing: -0.015em;
     }
+    .dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6,
+    [data-theme="dark"] h1, [data-theme="dark"] h2, [data-theme="dark"] h3, [data-theme="dark"] h4, [data-theme="dark"] h5, [data-theme="dark"] h6 {
+      color: #f8fafc !important;
+    }
     h1 {
       font-size: 2.15rem;
       line-height: 1.25;
       margin-top: 1rem;
       margin-bottom: 1.25rem;
-      color: #0f172a;
-      border-bottom: 1px solid #e2e8f0 !important;
+      color: ${heading};
+      border-bottom: 1px solid ${headingBorder} !important;
       padding-bottom: 0.3em !important;
       letter-spacing: -0.02em;
     }
@@ -314,8 +344,8 @@ export function getMarkdownStyles(): string {
       font-size: 1.45rem;
       margin-top: 2.5rem;
       margin-bottom: 0.85rem;
-      color: #0f172a;
-      border-bottom: 1px solid #f1f5f9 !important;
+      color: ${heading};
+      border-bottom: 1px solid ${headingBorder} !important;
       padding-bottom: 0.2em !important;
     }
     h3 {
@@ -323,41 +353,47 @@ export function getMarkdownStyles(): string {
       margin-top: 2rem;
       margin-bottom: 0.65rem;
       font-weight: 600;
-      color: #1e293b;
+      color: ${isDark ? '#f1f5f9' : '#1e293b'};
     }
     h4 {
       font-size: 1.08rem;
       margin-top: 1.6rem;
       margin-bottom: 0.5rem;
       font-weight: 600;
-      color: #334155;
+      color: ${isDark ? '#cbd5e1' : '#334155'};
     }
     p {
       margin-top: 0;
       margin-bottom: 1.25rem;
-      color: #24292f;
+      color: ${isDark ? '#cbd5e1' : '#24292f'};
       line-height: 1.72;
     }
+    .dark p, [data-theme="dark"] p {
+      color: #cbd5e1 !important;
+    }
     strong, b {
-      color: #0f172a;
+      color: ${heading};
       font-weight: 600;
     }
+    .dark strong, .dark b, [data-theme="dark"] strong, [data-theme="dark"] b {
+      color: #f8fafc !important;
+    }
     em, i {
-      color: #334155;
+      color: ${isDark ? '#94a3b8' : '#334155'};
       font-style: italic;
     }
     a, .markdown-body a {
-      color: #0969da !important;
+      color: ${linkColor} !important;
       text-decoration: underline !important;
-      text-decoration-color: rgba(9, 105, 218, 0.4) !important;
+      text-decoration-color: ${isDark ? 'rgba(88, 166, 255, 0.4)' : 'rgba(9, 105, 218, 0.4)'} !important;
       text-underline-offset: 3px !important;
       font-weight: 500;
       cursor: pointer;
       transition: color 0.15s ease, text-decoration-color 0.15s ease;
     }
     a:hover, .markdown-body a:hover {
-      color: #1a7f37 !important;
-      text-decoration-color: #1a7f37 !important;
+      color: ${isDark ? '#79c0ff' : '#1a7f37'} !important;
+      text-decoration-color: ${isDark ? '#79c0ff' : '#1a7f37'} !important;
     }
     img {
       max-width: 100%;
@@ -368,14 +404,17 @@ export function getMarkdownStyles(): string {
     hr {
       height: 1px;
       border: none;
-      background: #e2e8f0;
+      background: ${headingBorder};
       margin: 2.5rem 0;
     }
     ul, ol {
       padding-left: 1.5rem;
       margin-top: 0.5rem;
       margin-bottom: 1.25rem;
-      color: #24292f;
+      color: ${isDark ? '#cbd5e1' : '#24292f'};
+    }
+    .dark ul, .dark ol, [data-theme="dark"] ul, [data-theme="dark"] ol {
+      color: #cbd5e1 !important;
     }
     li {
       margin-bottom: 0.45rem;
@@ -386,26 +425,34 @@ export function getMarkdownStyles(): string {
       margin-bottom: 0.35rem;
     }
     li::marker {
-      color: #64748b;
+      color: ${textSubtle};
     }
 
     /* Blockquote with refined left accent */
     blockquote, .markdown-quote {
       margin: 1.5rem 0;
       padding: 0.6rem 1rem 0.6rem 1.25rem;
-      border-left: 3px solid #0969da;
-      background: #f6f8fa;
+      border-left: 3px solid ${isDark ? '#38bdf8' : '#0969da'};
+      background: ${bgSubtle};
       border-radius: 0 8px 8px 0;
-      color: #57606a;
+      color: ${textMuted};
       font-style: normal;
     }
     blockquote > p, .markdown-quote > p {
-      color: #57606a;
+      color: ${textMuted};
       line-height: 1.7;
       margin-bottom: 0.6rem;
     }
     blockquote > p:last-child, .markdown-quote > p:last-child {
       margin-bottom: 0;
+    }
+    .dark blockquote, [data-theme="dark"] blockquote {
+      background: #161b22 !important;
+      border-left-color: #38bdf8 !important;
+      color: #8b949e !important;
+    }
+    .dark blockquote p, [data-theme="dark"] blockquote p {
+      color: #8b949e !important;
     }
 
     /* Inline Code & Badges */
@@ -414,10 +461,15 @@ export function getMarkdownStyles(): string {
       font-size: 0.88em;
       padding: 0.18em 0.45em;
       border-radius: 5px;
-      background: #eff1f3;
-      color: #cf222e;
-      border: 1px solid #e1e4e8;
+      background: ${codeBg};
+      color: ${codeText};
+      border: 1px solid ${codeBorder};
       word-break: break-word;
+    }
+    .dark :not(pre) > code, .dark .inline-code, [data-theme="dark"] :not(pre) > code, [data-theme="dark"] .inline-code {
+      background: #1e293b !important;
+      color: #f87171 !important;
+      border-color: #334155 !important;
     }
     .inline-badge-danger {
       background: rgba(239, 68, 68, 0.12) !important;
@@ -428,9 +480,9 @@ export function getMarkdownStyles(): string {
       letter-spacing: 0.03em !important;
     }
     .inline-badge-muted {
-      background: #eaeef2 !important;
-      color: #24292f !important;
-      border: 1px solid #d0d7de !important;
+      background: ${isDark ? '#21262d' : '#eaeef2'} !important;
+      color: ${isDark ? '#c9d1d9' : '#24292f'} !important;
+      border: 1px solid ${border} !important;
       font-weight: 600 !important;
       font-size: 0.84em !important;
     }
@@ -446,7 +498,7 @@ export function getMarkdownStyles(): string {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      color: #7d8590 !important;
+      color: ${textSubtle} !important;
       opacity: 0;
       text-decoration: none !important;
       transition: opacity 0.15s ease, color 0.15s ease, transform 0.15s ease;
@@ -459,10 +511,10 @@ export function getMarkdownStyles(): string {
     .markdown-heading:hover .anchor-link,
     .markdown-heading .anchor-link:focus {
       opacity: 1;
-      color: #0969da !important;
+      color: ${linkColor} !important;
     }
     .markdown-heading .anchor-link:hover {
-      color: #0969da !important;
+      color: ${linkColor} !important;
       transform: scale(1.15);
     }
     .markdown-heading .heading-text {
@@ -496,7 +548,7 @@ export function getMarkdownStyles(): string {
       border-spacing: 0;
       font-size: 14px;
       margin: 1.5rem 0;
-      border: 1px solid #d0d7de;
+      border: 1px solid ${border};
       border-radius: 6px;
       overflow: hidden;
     }
@@ -505,40 +557,56 @@ export function getMarkdownStyles(): string {
       padding: 12px 16px;
       font-size: 14px;
       font-weight: 700;
-      color: #1f2328;
-      border-bottom: 2px solid #d0d7de;
-      background: #f6f8fa;
+      color: ${heading};
+      border-bottom: 2px solid ${border};
+      background: ${bgSubtle};
       white-space: nowrap;
     }
     table td, table.data-table td {
       padding: 12px 16px;
       font-size: 14px;
       line-height: 1.6;
-      color: #24292f;
-      border-bottom: 1px solid #e2e8f0;
-      background: #ffffff;
+      color: ${isDark ? '#c9d1d9' : '#24292f'};
+      border-bottom: 1px solid ${headingBorder};
+      background: ${bg};
       vertical-align: top;
     }
     table tr:hover td, table.data-table tr:hover td {
-      background: #f6f8fa;
+      background: ${bgSubtle};
+    }
+    .dark table, [data-theme="dark"] table {
+      border-color: #30363d !important;
+    }
+    .dark table th, [data-theme="dark"] table th {
+      background: #161b22 !important;
+      color: #f0f6fc !important;
+      border-color: #30363d !important;
+    }
+    .dark table td, [data-theme="dark"] table td {
+      background: #0d1117 !important;
+      color: #c9d1d9 !important;
+      border-color: #21262d !important;
+    }
+    .dark table tr:hover td, [data-theme="dark"] table tr:hover td {
+      background: #161b22 !important;
     }
 
-    /* Clean Code Block Styling Matching Light Document Theme */
+    /* Clean Code Block Styling */
     .code-block-wrapper {
       margin: 1.75rem 0;
-      border: 1px solid #d0d7de;
-      background: #f6f8fa;
+      border: 1px solid ${border};
+      background: ${bgSubtle};
       border-radius: 10px;
       overflow: hidden;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
       transition: border-color 0.15s ease;
     }
     .code-block-wrapper:hover {
-      border-color: #b0b8c4;
+      border-color: ${isDark ? '#484f58' : '#b0b8c4'};
     }
     .code-block-header {
-      background: #f6f8fa;
-      border-bottom: 1px solid #d0d7de;
+      background: ${bgSubtle};
+      border-bottom: 1px solid ${border};
       padding: 8px 16px;
       display: flex;
       align-items: center;
@@ -548,7 +616,7 @@ export function getMarkdownStyles(): string {
     .code-lang-label {
       font-family: var(--font-mono);
       font-size: 12px;
-      color: #57606a;
+      color: ${textMuted};
       text-transform: lowercase;
       font-weight: 600;
       letter-spacing: 0.02em;
@@ -556,7 +624,7 @@ export function getMarkdownStyles(): string {
     .code-title {
       font-family: var(--font-mono);
       font-size: 12px;
-      color: #57606a;
+      color: ${textMuted};
     }
     .btn-code-copy {
       display: inline-flex;
@@ -566,16 +634,16 @@ export function getMarkdownStyles(): string {
       border-radius: 6px;
       border: none;
       background: transparent;
-      color: #57606a;
+      color: ${textMuted};
       cursor: pointer;
       transition: all 0.15s ease;
     }
     .btn-code-copy:hover {
-      color: #1f2328;
-      background: #eaeef2;
+      color: ${heading};
+      background: ${isDark ? '#21262d' : '#eaeef2'};
     }
     .code-block-body {
-      background: #ffffff;
+      background: ${codePreBg};
       overflow-x: auto;
     }
     .code-pre {
@@ -584,85 +652,91 @@ export function getMarkdownStyles(): string {
       font-family: var(--font-mono);
       font-size: 13.5px;
       line-height: 23px;
-      color: #24292f;
-      background: #ffffff;
+      color: ${codePreText};
+      background: ${codePreBg};
       tab-size: 2;
       white-space: pre;
       overflow-x: auto;
       scrollbar-width: thin;
-      scrollbar-color: #d0d7de transparent;
+      scrollbar-color: ${border} transparent;
     }
     .code-pre::-webkit-scrollbar {
       height: 6px;
     }
     .code-pre::-webkit-scrollbar-thumb {
-      background: #d0d7de;
+      background: ${border};
       border-radius: 3px;
     }
     .code-pre::-webkit-scrollbar-thumb:hover {
-      background: #afb8c1;
+      background: ${textSubtle};
     }
 
-    /* Prism Syntax Tokens - High-fidelity Light Document Palette */
-    .token.comment, .token.prolog, .token.doctype, .token.cdata {
-      color: #6e7781 !important;
-      font-style: italic !important;
+    .dark .code-block-wrapper, [data-theme="dark"] .code-block-wrapper {
+      background: #161b22 !important;
+      border-color: #30363d !important;
     }
-    .token.punctuation {
-      color: #24292f !important;
+    .dark .code-block-header, [data-theme="dark"] .code-block-header {
+      background: #161b22 !important;
+      border-color: #30363d !important;
     }
-    .token.keyword, .token.selector, .token.important, .token.atrule {
-      color: #cf222e !important;
-      font-weight: 600 !important;
+    .dark .code-block-body, [data-theme="dark"] .code-block-body,
+    .dark .code-pre, [data-theme="dark"] .code-pre {
+      background: #0d1117 !important;
+      color: #e6edf3 !important;
     }
-    .token.operator {
-      color: #0550ae !important;
-    }
-    .token.string, .token.char, .token.attr-value {
-      color: #0a3069 !important;
-    }
-    .token.function, .token.function-name, .token.method {
-      color: #8250df !important;
-    }
-    .token.class-name, .token.maybe-class-name {
-      color: #953800 !important;
-    }
-    .token.builtin, .token.special-attr {
-      color: #0550ae !important;
-    }
-    .token.boolean, .token.constant {
-      color: #0550ae !important;
-    }
-    .token.number {
-      color: #0550ae !important;
-    }
-    .token.property, .token.property-access {
-      color: #953800 !important;
-    }
-    .token.variable {
-      color: #24292f !important;
-    }
-    .token.parameter {
-      color: #953800 !important;
-    }
-    .token.regex {
-      color: #116329 !important;
-    }
-    .token.tag, .token.tag .token.name {
-      color: #116329 !important;
-      font-weight: 600 !important;
-    }
-    .token.attr-name {
-      color: #0550ae !important;
-    }
-    .token.deleted {
-      color: #82071e !important;
-      background-color: #ffebe9 !important;
-    }
-    .token.inserted {
-      color: #116329 !important;
-      background-color: #dafbe1 !important;
-    }
+
+    /* Prism Syntax Tokens - High-fidelity Palette */
+    ${isDark ? `
+    .token.comment, .token.prolog, .token.doctype, .token.cdata { color: #8b949e !important; font-style: italic !important; }
+    .token.punctuation { color: #c9d1d9 !important; }
+    .token.keyword, .token.selector, .token.important, .token.atrule { color: #ff7b72 !important; font-weight: 600 !important; }
+    .token.operator { color: #79c0ff !important; }
+    .token.string, .token.char, .token.attr-value { color: #a5d6ff !important; }
+    .token.function, .token.function-name, .token.method { color: #d2a8ff !important; }
+    .token.class-name, .token.maybe-class-name { color: #ffa657 !important; }
+    .token.builtin, .token.special-attr { color: #79c0ff !important; }
+    .token.boolean, .token.constant { color: #79c0ff !important; }
+    .token.number { color: #79c0ff !important; }
+    .token.property, .token.property-access { color: #79c0ff !important; }
+    .token.variable { color: #ffa657 !important; }
+    .token.parameter { color: #ffa657 !important; }
+    .token.regex { color: #7ee787 !important; }
+    .token.tag, .token.tag .token.name { color: #7ee787 !important; font-weight: 600 !important; }
+    .token.attr-name { color: #79c0ff !important; }
+    .token.deleted { color: #ffdcd7 !important; background-color: #67060c !important; }
+    .token.inserted { color: #aff5b4 !important; background-color: #033a16 !important; }
+    ` : `
+    .token.comment, .token.prolog, .token.doctype, .token.cdata { color: #6e7781 !important; font-style: italic !important; }
+    .token.punctuation { color: #24292f !important; }
+    .token.keyword, .token.selector, .token.important, .token.atrule { color: #cf222e !important; font-weight: 600 !important; }
+    .token.operator { color: #0550ae !important; }
+    .token.string, .token.char, .token.attr-value { color: #0a3069 !important; }
+    .token.function, .token.function-name, .token.method { color: #8250df !important; }
+    .token.class-name, .token.maybe-class-name { color: #953800 !important; }
+    .token.builtin, .token.special-attr { color: #0550ae !important; }
+    .token.boolean, .token.constant { color: #0550ae !important; }
+    .token.number { color: #0550ae !important; }
+    .token.property, .token.property-access { color: #953800 !important; }
+    .token.variable { color: #24292f !important; }
+    .token.parameter { color: #953800 !important; }
+    .token.regex { color: #116329 !important; }
+    .token.tag, .token.tag .token.name { color: #116329 !important; font-weight: 600 !important; }
+    .token.attr-name { color: #0550ae !important; }
+    .token.deleted { color: #82071e !important; background-color: #ffebe9 !important; }
+    .token.inserted { color: #116329 !important; background-color: #dafbe1 !important; }
+    `}
+
+    .dark .token.comment, [data-theme="dark"] .token.comment { color: #8b949e !important; }
+    .dark .token.punctuation, [data-theme="dark"] .token.punctuation { color: #c9d1d9 !important; }
+    .dark .token.keyword, [data-theme="dark"] .token.keyword { color: #ff7b72 !important; }
+    .dark .token.operator, [data-theme="dark"] .token.operator { color: #79c0ff !important; }
+    .dark .token.string, [data-theme="dark"] .token.string { color: #a5d6ff !important; }
+    .dark .token.function, [data-theme="dark"] .token.function { color: #d2a8ff !important; }
+    .dark .token.class-name, [data-theme="dark"] .token.class-name { color: #ffa657 !important; }
+    .dark .token.number, [data-theme="dark"] .token.number { color: #79c0ff !important; }
+    .dark .token.boolean, [data-theme="dark"] .token.boolean { color: #79c0ff !important; }
+    .dark .token.property, [data-theme="dark"] .token.property { color: #79c0ff !important; }
+    .dark .token.variable, [data-theme="dark"] .token.variable { color: #ffa657 !important; }
 
     ${sqlConsoleStyles}
     ${MERMAID_CODE_STYLES}
@@ -943,47 +1017,50 @@ export function convertMarkdownToHtmlSync(
     const highlighted = highlightMermaidCode(block.code);
 
     const diagramHtml = `
-      <div class="github-mermaid-block group relative my-6 rounded-xl border border-[#cbd5e1] bg-white shadow-lg overflow-hidden" data-raw-mermaid="${escapedCode}">
-        <!-- Diagram Modern Header (Clean Light Styling) -->
-        <div class="diagram-header flex items-center justify-between p-3 bg-white border-b border-[#cbd5e1] gap-2.5 flex-wrap">
+      <div class="github-mermaid-block group relative my-6 rounded-xl border border-[#cbd5e1] dark:border-[#30363d] bg-white dark:bg-[#0d1117] shadow-lg overflow-hidden" data-raw-mermaid="${escapedCode}">
+        <!-- Diagram Modern Header (Clean Light & Dark Styling) -->
+        <div class="diagram-header flex items-center justify-between p-3 bg-white dark:bg-[#161b22] border-b border-[#cbd5e1] dark:border-[#30363d] gap-2.5 flex-wrap">
           <div class="diagram-title-group flex items-center gap-2.5 min-w-0 flex-wrap">
-            <span class="diagram-icon-badge inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[#dbeafe] text-[#1e40af] font-bold text-sm select-none">${meta.icon}</span>
-            <span class="diagram-title text-[14.5px] font-bold text-[#0f172a] truncate tracking-tight">${meta.title}</span>
+            <span class="diagram-icon-badge inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[#dbeafe] dark:bg-[#1e3a8a] text-[#1e40af] dark:text-[#93c5fd] font-bold text-sm select-none">${meta.icon}</span>
+            <span class="diagram-title text-[14.5px] font-bold text-[#0f172a] dark:text-[#f8fafc] truncate tracking-tight">${meta.title}</span>
           </div>
-          <div class="diagram-toolbar flex items-center gap-1 bg-[#f8fafc] p-1 rounded-xl border border-[#cbd5e1] shadow-xs select-none" role="toolbar" aria-label="Diagram controls">
-            <button type="button" class="btn-diag-legend btn-mermaid-legend diagram-btn flex items-center justify-center h-7 px-2.5 rounded-lg text-xs font-sans font-medium text-[#475569] hover:bg-[#e2e8f0] transition-colors cursor-pointer" title="Diagram Legend: explain node shapes and line types" aria-label="Diagram Legend">
+          <div class="diagram-toolbar ml-auto flex items-center gap-1 bg-[#f8fafc] dark:bg-[#0d1117] p-1 rounded-xl border border-[#cbd5e1] dark:border-[#30363d] shadow-xs select-none" role="toolbar" aria-label="Diagram controls">
+            <button type="button" class="btn-diag-legend btn-mermaid-legend diagram-btn flex items-center justify-center h-7 px-2.5 rounded-lg text-xs font-sans font-medium text-[#475569] dark:text-[#c9d1d9] hover:bg-[#e2e8f0] dark:hover:bg-[#21262d] transition-colors cursor-pointer" title="Diagram Legend: explain node shapes and line types" aria-label="Diagram Legend">
               <span aria-hidden="true">💡 Legend</span>
             </button>
-            <div class="h-4 w-px bg-[#cbd5e1] mx-0.5"></div>
-            <button type="button" class="btn-diag-zoomout btn-mermaid-zoomout diagram-btn flex items-center justify-center h-7 px-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-[#e2e8f0] transition-colors cursor-pointer" title="Zoom out (−)" aria-label="Zoom out">
+            <div class="h-4 w-px bg-[#cbd5e1] dark:bg-[#30363d] mx-0.5"></div>
+            <button type="button" class="btn-diag-zoomout btn-mermaid-zoomout diagram-btn flex items-center justify-center h-7 px-2 rounded-lg text-xs font-semibold text-[#475569] dark:text-[#c9d1d9] hover:bg-[#e2e8f0] dark:hover:bg-[#21262d] transition-colors cursor-pointer" title="Zoom out (−)" aria-label="Zoom out">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 7.75A.75.75 0 0 1 2.75 7h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 7.75Z"/></svg>
             </button>
-            <div class="diagram-zoom-indicator flex items-center justify-center h-7 px-2 text-xs font-mono font-bold text-[#1e293b] select-none" title="Current zoom level">
+            <div class="diagram-zoom-indicator flex items-center justify-center h-7 px-2 text-xs font-mono font-bold text-[#1e293b] dark:text-[#f0f6fc] select-none" title="Current zoom level">
               <span class="zoom-val zoom-text">100%</span>
             </div>
-            <button type="button" class="btn-diag-zoomin btn-mermaid-zoomin diagram-btn flex items-center justify-center h-7 px-2 rounded-lg text-xs font-semibold text-[#475569] hover:bg-[#e2e8f0] transition-colors cursor-pointer" title="Zoom in (+)" aria-label="Zoom in">
+            <button type="button" class="btn-diag-zoomin btn-mermaid-zoomin diagram-btn flex items-center justify-center h-7 px-2 rounded-lg text-xs font-semibold text-[#475569] dark:text-[#c9d1d9] hover:bg-[#e2e8f0] dark:hover:bg-[#21262d] transition-colors cursor-pointer" title="Zoom in (+)" aria-label="Zoom in">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"/></svg>
             </button>
-            <div class="h-4 w-px bg-[#cbd5e1] mx-0.5"></div>
-            <button type="button" class="btn-diag-fit btn-mermaid-fit diagram-btn flex items-center gap-1 justify-center h-7 px-2.5 rounded-lg text-xs font-mono font-semibold text-[#475569] hover:bg-[#e2e8f0] transition-colors cursor-pointer" title="Zoom to fit diagram in view" aria-label="Zoom to fit">
+            <div class="h-4 w-px bg-[#cbd5e1] dark:bg-[#30363d] mx-0.5"></div>
+            <button type="button" class="btn-diag-fit btn-mermaid-fit diagram-btn flex items-center gap-1 justify-center h-7 px-2.5 rounded-lg text-xs font-mono font-semibold text-[#475569] dark:text-[#c9d1d9] hover:bg-[#e2e8f0] dark:hover:bg-[#21262d] transition-colors cursor-pointer" title="Zoom to fit diagram in view" aria-label="Zoom to fit">
               <span aria-hidden="true">⊡</span> <span>Fit</span>
             </button>
-            <button type="button" class="btn-diag-reset btn-mermaid-reset diagram-btn flex items-center gap-1 justify-center h-7 px-2.5 rounded-lg text-xs font-mono font-semibold text-[#475569] hover:bg-[#e2e8f0] transition-colors cursor-pointer" title="Reset zoom to 100% (1:1)" aria-label="Reset zoom">
+            <button type="button" class="btn-diag-reset btn-mermaid-reset diagram-btn flex items-center gap-1 justify-center h-7 px-2.5 rounded-lg text-xs font-mono font-semibold text-[#475569] dark:text-[#c9d1d9] hover:bg-[#e2e8f0] dark:hover:bg-[#21262d] transition-colors cursor-pointer" title="Reset zoom to 100% (1:1)" aria-label="Reset zoom">
               <span aria-hidden="true">↺</span> <span>Reset</span>
             </button>
-            <div class="h-4 w-px bg-[#cbd5e1] mx-0.5"></div>
-            <button type="button" class="btn-diag-copy btn-mermaid-copy diagram-btn flex items-center justify-center h-7 px-2.5 rounded-lg text-xs font-mono font-semibold text-[#475569] hover:bg-[#e2e8f0] transition-colors cursor-pointer" title="Copy Mermaid syntax" aria-label="Copy Mermaid syntax">
+            <div class="h-4 w-px bg-[#cbd5e1] dark:bg-[#30363d] mx-0.5"></div>
+            <button type="button" class="btn-diag-copy btn-mermaid-copy diagram-btn flex items-center justify-center h-7 px-2.5 rounded-lg text-xs font-mono font-semibold text-[#475569] dark:text-[#c9d1d9] hover:bg-[#e2e8f0] dark:hover:bg-[#21262d] transition-colors cursor-pointer" title="Copy Mermaid syntax" aria-label="Copy Mermaid syntax">
               📋 Copy
             </button>
-            <button type="button" class="btn-diag-expand btn-mermaid-expand diagram-btn flex items-center justify-center h-7 px-2.5 rounded-lg text-xs font-mono font-semibold text-[#475569] hover:bg-[#e2e8f0] transition-colors cursor-pointer" title="Toggle Fullscreen View" aria-label="Toggle Fullscreen View">
+            <button type="button" class="btn-diag-theme btn-mermaid-theme diagram-btn flex items-center justify-center gap-1 h-7 px-2.5 rounded-lg text-xs font-mono font-semibold text-[#475569] dark:text-[#c9d1d9] hover:bg-[#e2e8f0] dark:hover:bg-[#21262d] transition-colors cursor-pointer" title="Toggle diagram theme: Dark / Light" aria-label="Toggle diagram theme">
+              <span class="theme-icon" aria-hidden="true">🌓</span> <span class="theme-text">Theme</span>
+            </button>
+            <button type="button" class="btn-diag-expand btn-mermaid-expand diagram-btn flex items-center justify-center h-7 px-2.5 rounded-lg text-xs font-mono font-semibold text-[#475569] dark:text-[#c9d1d9] hover:bg-[#e2e8f0] dark:hover:bg-[#21262d] transition-colors cursor-pointer" title="Toggle Fullscreen View" aria-label="Toggle Fullscreen View">
               ⛶ Fullscreen
             </button>
           </div>
         </div>
 
-        <!-- Diagram Viewport (Pan & Zoom target) -->
-        <div class="mermaid-viewport w-full p-6 flex items-center justify-center overflow-hidden cursor-grab active:cursor-grabbing select-none" style="min-height: 290px;">
-          <div class="mermaid-canvas transition-transform duration-75 origin-center">
+        <!-- Diagram Viewport (Pan & Zoom target at natural initial position) -->
+        <div class="mermaid-viewport w-full p-6 flex items-start justify-center overflow-hidden cursor-grab active:cursor-grabbing select-none" style="min-height: 290px;">
+          <div class="mermaid-canvas transition-transform duration-75 origin-top">
             <pre class="mermaid-raw-source text-center font-mono text-xs text-[#f0f6fc]">${escapedCode}</pre>
           </div>
           <!-- Persistent Floating Legend Button on Bottom Left -->
@@ -1074,18 +1151,19 @@ export function convertMarkdownToHtmlSync(
     }
   }
 
+  const isDarkDoc = options?.isDark ?? false;
   const documentTitle = options?.title || extractTitle(markdown);
 
   return `<!DOCTYPE html>
-<html lang="en" style="color-scheme: light;">
+<html lang="en" class="${isDarkDoc ? 'dark' : 'light'}" data-theme="${isDarkDoc ? 'dark' : 'light'}" style="color-scheme: ${isDarkDoc ? 'dark' : 'light'};">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="${isDarkDoc ? 'dark' : 'light'}">
   <title>${escapeHtml(documentTitle)}</title>
   ${MARKDOWN_FONTS_HTML}
   <style>
-    ${getMarkdownStyles()}
+    ${getMarkdownStyles(isDarkDoc)}
   </style>
 
   <!-- Mermaid Runtime Engine inside iframe -->
@@ -1101,7 +1179,7 @@ export function convertMarkdownToHtmlSync(
       function initMermaidAndControls() {
         if (typeof window.mermaid === 'undefined') return;
         try {
-          var isDark = false; // File content renders in clean light theme
+          var isDark = ${isDarkDoc ? 'true' : 'false'} || document.documentElement.classList.contains('dark') || document.body.classList.contains('dark') || document.documentElement.getAttribute('data-theme') === 'dark';
           window.mermaid.initialize({
             startOnLoad: false,
             theme: 'base',
@@ -1262,7 +1340,7 @@ export function convertMarkdownToHtmlSync(
           function updateTransform() {
             if (canvas) {
               canvas.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + scale + ')';
-              canvas.style.transformOrigin = 'center center';
+              canvas.style.transformOrigin = 'top center';
             }
             var pct = Math.round(scale * 100) + '%';
             if (zoomText) zoomText.textContent = pct;
@@ -1554,12 +1632,11 @@ export function convertMarkdownToHtmlSync(
             });
           }
 
-          // Automatically fit on load for complex charts
-          setTimeout(function() {
-            fitDiagram(block.classList.contains('is-fullscreen'));
-          }, 60);
-            fitDiagram(block.classList.contains('is-fullscreen'));
-          }, 60);
+          // Initialize at natural initial position (100% 1:1, pan 0, 0)
+          scale = 1.0;
+          panX = 0;
+          panY = 0;
+          updateTransform();
         });
       }
 
@@ -1792,7 +1869,7 @@ export function convertMarkdownToHtmlSync(
     })();
   </script>
 </head>
-<body class="markdown-body markdown-preview-container">
+<body class="markdown-body markdown-preview-container ${isDarkDoc ? 'dark' : ''}" data-theme="${isDarkDoc ? 'dark' : 'light'}">
   ${parsedHtml}
 </body>
 </html>`;

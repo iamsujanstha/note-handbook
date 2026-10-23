@@ -24,6 +24,7 @@ import {
   Palette,
   WifiOff,
   ArrowDownToLine,
+  RefreshCw,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -36,12 +37,15 @@ interface HeaderProps {
   onToggleSidebar: () => void;
   sidebarOpen?: boolean;
   onExportJson: () => void;
+  onExportSql?: () => void;
   onImportJson: (jsonString: string) => void;
   onExportCurrentHtml: () => void;
   isPreviewMode?: boolean;
   onTogglePreviewMode?: () => void;
   theme: ThemeMode;
   onToggleTheme: () => void;
+  onSyncLive?: () => void;
+  isSyncingLive?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -54,12 +58,15 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleSidebar,
   sidebarOpen = true,
   onExportJson,
+  onExportSql,
   onImportJson,
   onExportCurrentHtml,
   isPreviewMode = false,
   onTogglePreviewMode,
   theme,
   onToggleTheme,
+  onSyncLive,
+  isSyncingLive = false,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingJson, setIsUploadingJson] = useState(false);
@@ -99,7 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="h-14 border-b border-[#e4e6eb] dark:border-[#262c36] bg-white/95 dark:bg-[#13171f]/95 backdrop-blur-xs px-4 flex items-center justify-between sticky top-0 z-40 transition-colors">
+    <header className="h-14 shrink-0 border-b border-[#e4e6eb] dark:border-[#262c36] bg-white/95 dark:bg-[#13171f]/95 backdrop-blur-xs px-4 flex items-center justify-between sticky top-0 z-40 transition-colors">
       {/* Left: Hamburger & Brand */}
       <div className="flex items-center gap-3">
         <button
@@ -248,69 +255,61 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </button>
 
-        {/* Export chapter HTML & JSON Backup - ONLY visible once logged in */}
+        {/* Export/Import JSON Backup - ONLY visible once logged in */}
         {user && (
-          <>
-            {activeChapter && viewMode === 'reader' && (
-              <button
-                id="export-chapter-html-btn"
-                onClick={onExportCurrentHtml}
-                className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-[#1877f2] dark:text-[#60a5fa] hover:bg-[#e7f3ff] dark:hover:bg-[#1e293b] rounded-lg border border-[#d8e4f8] dark:border-[#262c36] bg-white dark:bg-[#181d28] transition-colors shadow-2xs"
-                title="Download current chapter as standalone .html file"
-              >
-                <FileDown className="w-3.5 h-3.5" />
-                <span>Export .html</span>
-              </button>
-            )}
+          <div className="flex items-center gap-1 border-r border-[#e4e6eb] dark:border-[#262c36] pr-2 mr-1">
+            <button
+              id="export-backup-btn"
+              onClick={onExportJson}
+              className="px-2 py-1.5 rounded-lg text-xs font-semibold text-[#65676b] dark:text-[#94a3b8] hover:text-[#1877f2] dark:hover:text-[#60a5fa] hover:bg-[#e7f3ff] dark:hover:bg-[#1e293b] transition-colors flex items-center gap-1 cursor-pointer"
+              title="Download full database backup (JSON)"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden xl:inline">JSON</span>
+            </button>
 
-            {/* Export/Import JSON */}
-            <div className="hidden lg:flex items-center gap-1 border-r border-[#e4e6eb] dark:border-[#262c36] pr-2 mr-1">
-              <button
-                id="export-backup-btn"
-                onClick={onExportJson}
-                className="p-1.5 rounded-lg text-[#65676b] dark:text-[#94a3b8] hover:text-[#1877f2] dark:hover:text-[#60a5fa] hover:bg-[#e7f3ff] dark:hover:bg-[#1e293b] transition-colors cursor-pointer"
-                title="Backup all topics & chapters (JSON)"
-              >
-                <Download className="w-4 h-4" />
-              </button>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-              <button
-                id="import-backup-btn"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploadingJson}
-                className="relative overflow-hidden px-2 py-1.5 rounded-lg text-[#65676b] dark:text-[#94a3b8] hover:text-[#1877f2] dark:hover:text-[#60a5fa] hover:bg-[#e7f3ff] dark:hover:bg-[#1e293b] transition-colors flex items-center gap-1.5 cursor-pointer text-xs font-semibold"
-                title={isUploadingJson ? `Importing backup: ${Math.round(uploadProgressJson)}%` : "Import notes backup (JSON)"}
-              >
-                {isUploadingJson && (
-                  <span
-                    className="absolute inset-y-0 left-0 bg-[#1877f2]/15 dark:bg-[#60a5fa]/20 transition-all duration-150"
-                    style={{ width: `${uploadProgressJson}%` }}
-                  />
-                )}
-                <Upload className={`w-4 h-4 ${isUploadingJson ? 'text-[#1877f2] dark:text-[#60a5fa] animate-bounce' : ''}`} />
-                {isUploadingJson && (
-                  <span className="text-[11px] font-mono font-bold text-[#1877f2] dark:text-[#60a5fa] tabular-nums">
-                    {Math.round(uploadProgressJson)}%
-                  </span>
-                )}
-              </button>
-            </div>
-          </>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <button
+              id="import-backup-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingJson}
+              className="relative overflow-hidden px-2 py-1.5 rounded-lg text-[#65676b] dark:text-[#94a3b8] hover:text-[#1877f2] dark:hover:text-[#60a5fa] hover:bg-[#e7f3ff] dark:hover:bg-[#1e293b] transition-colors flex items-center gap-1.5 cursor-pointer text-xs font-semibold"
+              title={isUploadingJson ? `Importing backup: ${Math.round(uploadProgressJson)}%` : "Restore notes backup (JSON)"}
+            >
+              {isUploadingJson && (
+                <span
+                  className="absolute inset-y-0 left-0 bg-[#1877f2]/15 dark:bg-[#60a5fa]/20 transition-all duration-150"
+                  style={{ width: `${uploadProgressJson}%` }}
+                />
+              )}
+              <Upload className={`w-3.5 h-3.5 ${isUploadingJson ? 'text-[#1877f2] dark:text-[#60a5fa] animate-bounce' : ''}`} />
+              {isUploadingJson && (
+                <span className="text-[11px] font-mono font-bold text-[#1877f2] dark:text-[#60a5fa] tabular-nums">
+                  {Math.round(uploadProgressJson)}%
+                </span>
+              )}
+            </button>
+          </div>
         )}
 
         {/* Minimal Auth Profile */}
         {user ? (
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#e7f3ff] dark:bg-[#1e293b] text-xs font-semibold text-[#1877f2] dark:text-[#60a5fa] border border-[#d8e4f8] dark:border-[#283548]">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span className="max-w-[100px] truncate">{user.name}</span>
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#e7f3ff] dark:bg-[#1e293b] text-xs font-semibold text-[#1877f2] dark:text-[#60a5fa] border border-[#d8e4f8] dark:border-[#283548]"
+              title={`Logged in as ${user.email} (Google Authenticator 2FA Active)`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="max-w-[130px] truncate">{user.email || user.name}</span>
+              <span className="text-[10px] font-bold px-1 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                2FA
+              </span>
             </div>
             <button
               id="auth-logout-btn"
@@ -326,9 +325,9 @@ export const Header: React.FC<HeaderProps> = ({
             id="auth-signin-btn"
             onClick={onOpenAuth}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 dark:bg-[#2563eb] text-white text-xs font-semibold hover:bg-black dark:hover:bg-[#1d4ed8] transition-colors shadow-xs cursor-pointer"
-            title="Sign In"
+            title="Sign In with Google Authenticator (2FA)"
           >
-            <UserIcon className="w-3.5 h-3.5 text-zinc-300 dark:text-white" />
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-400 dark:text-white" />
             <span>Sign In</span>
           </button>
         )}

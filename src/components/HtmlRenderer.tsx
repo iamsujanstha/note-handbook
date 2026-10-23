@@ -13,6 +13,7 @@ import {
   ExternalLink,
   Send,
   Loader2,
+  Lock,
 } from 'lucide-react';
 import {
   getStoredReadingPositions,
@@ -22,6 +23,7 @@ import {
 import { BrowserHtmlFrame, BrowserHtmlFrameRef } from './BrowserHtmlFrame';
 import { isMarkdownContent, convertMarkdownToHtml, parseMarkdownHeadings } from '../lib/markdown';
 import { FloatingTableOfContents } from './FloatingTableOfContents';
+import { ScribdLockOverlay } from './ScribdLockOverlay';
 
 interface HtmlRendererProps {
   user?: User | null;
@@ -29,6 +31,10 @@ interface HtmlRendererProps {
   title: string;
   htmlContent: string;
   topicName?: string;
+  firstChapterInTopic?: { id: string; title: string } | null;
+  isLocked?: boolean;
+  onRequireAuth?: (promptMessage?: string) => void;
+  onSelectChapter?: (chapterId: string) => void;
   tags?: string[];
   lastPublishedAt?: string;
   isDraftPreview?: boolean;
@@ -36,12 +42,15 @@ interface HtmlRendererProps {
   cssMode?: 'global' | 'none' | 'custom';
   customCss?: string;
   customCssFileName?: string;
+  theme?: 'light' | 'dark';
   onToggleGlobalCss?: (include: boolean) => void;
   onChangeCssMode?: (mode: 'global' | 'none' | 'custom') => void;
   onBookmarkUpdated?: () => void;
   onTogglePreviewMode?: () => void;
   onDeleteChapter?: (chapterId: string) => void;
   onPublish?: () => Promise<void> | void;
+  isLoadingContent?: boolean;
+  contentSize?: number;
 }
 
 export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
@@ -50,6 +59,10 @@ export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
   title,
   htmlContent,
   topicName,
+  firstChapterInTopic,
+  isLocked = false,
+  onRequireAuth,
+  onSelectChapter,
   tags = [],
   lastPublishedAt,
   isDraftPreview = false,
@@ -57,12 +70,15 @@ export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
   cssMode: initialCssMode,
   customCss,
   customCssFileName,
+  theme,
   onToggleGlobalCss,
   onChangeCssMode,
   onBookmarkUpdated,
   onTogglePreviewMode,
   onDeleteChapter,
   onPublish,
+  isLoadingContent = false,
+  contentSize = 0,
 }) => {
   const frameRef = useRef<BrowserHtmlFrameRef>(null);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -111,8 +127,10 @@ export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
     const parsed = parseMarkdownHeadings(htmlContent);
     if (parsed.length > 0) {
       setToc(parsed);
+    } else if (!htmlContent) {
+      setToc([]);
     }
-  }, [htmlContent]);
+  }, [htmlContent, chapterId]);
 
   const handleTogglePinned = () => {
     setIsTocPinned((prev) => {
@@ -151,8 +169,36 @@ export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
     };
   }, [htmlContent]);
 
-  // File content always renders in clean light theme per user design requirement
-  const isDocDark = false;
+  // Dynamically inherit global theme (light or dark mode)
+  const [systemIsDark, setSystemIsDark] = useState<boolean>(() => {
+    if (typeof document !== 'undefined') {
+      return document.documentElement.classList.contains('dark');
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const updateTheme = () => {
+      if (typeof document !== 'undefined') {
+        setSystemIsDark(document.documentElement.classList.contains('dark'));
+      }
+    };
+    updateTheme();
+
+    const observer = new MutationObserver(() => {
+      updateTheme();
+    });
+    if (typeof document !== 'undefined' && document.documentElement) {
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  const isDocDark = theme ? theme === 'dark' : systemIsDark;
 
   // Handle iframe scroll updates
   const handleScroll = useCallback(
@@ -234,32 +280,39 @@ export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
   };
 
   const handleOpenInTab = async () => {
+    if (isLocked) {
+      onRequireAuth?.(`Sign in to view or export full notes for "${title}".`);
+      return;
+    }
     const isMd = isMarkdownContent(htmlContent);
     let renderedHtml = htmlContent;
     if (isMd) {
       try {
-        renderedHtml = await convertMarkdownToHtml(htmlContent, { title });
+        renderedHtml = await convertMarkdownToHtml(htmlContent, { title, isDark: isDocDark });
       } catch {
         renderedHtml = htmlContent;
       }
     }
+    const isDark = isDocDark;
     const fullHtml = `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="${isDark ? 'dark' : 'light'}" data-theme="${isDark ? 'dark' : 'light'}" style="color-scheme: ${isDark ? 'dark' : 'light'};">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="${isDark ? 'dark' : 'light'}">
   <title>${title || 'Preview'}</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 24px; line-height: 1.6; color: #1c1e21; background: #ffffff; }
-    pre { background: #161b22; color: #e6edf3; padding: 16px; border-radius: 8px; overflow-x: auto; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 24px; line-height: 1.6; color: ${isDark ? '#f1f5f9' : '#1c1e21'}; background: ${isDark ? '#0c1015' : '#ffffff'}; }
+    pre { background: ${isDark ? '#161b22' : '#f6f8fa'}; color: ${isDark ? '#e6edf3' : '#24292f'}; padding: 16px; border-radius: 8px; overflow-x: auto; border: 1px solid ${isDark ? '#30363d' : '#d0d7de'}; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-    th, td { border: 1px solid #ced0d4; padding: 8px 12px; text-align: left; }
-    th { background: #f0f2f5; }
+    th, td { border: 1px solid ${isDark ? '#30363d' : '#ced0d4'}; padding: 8px 12px; text-align: left; }
+    th { background: ${isDark ? '#161b22' : '#f0f2f5'}; color: ${isDark ? '#f0f6fc' : '#1f2328'}; }
+    td { color: ${isDark ? '#c9d1d9' : '#24292f'}; }
     img { max-width: 100%; height: auto; }
   </style>
 </head>
-<body>
+<body class="${isDark ? 'dark' : ''}">
   ${renderedHtml}
 </body>
 </html>`;
@@ -276,7 +329,9 @@ export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
   return (
     <div
       id="html-renderer-container"
-      className="relative w-full h-full flex flex-col flex-1 overflow-hidden transition-colors bg-white text-[#1c1e21]"
+      className={`relative w-full h-full flex flex-col flex-1 min-h-0 overflow-hidden transition-colors ${
+        isDocDark ? 'bg-[#0c1015] text-[#f5f2eb]' : 'bg-white text-[#1c1e21]'
+      }`}
     >
       {/* 1. Top Reading Progress Indicator (Fixed line at top) */}
       <div
@@ -288,17 +343,25 @@ export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
           aria-valuenow={readProgress}
           aria-valuemin={0}
           aria-valuemax={100}
+          aria-busy={isLoadingContent}
           aria-label="Reading progress"
-          className={`w-full h-1 relative overflow-hidden ${
-            isDocDark ? 'bg-white/10' : 'bg-black/5'
-          }`}
+          className="w-full h-0.5 relative overflow-hidden bg-transparent"
         >
-          <div
-            id="reader-progress-bar"
-            data-testid="reading-progress-bar"
-            className="h-full bg-linear-to-r from-[#1877f2] via-[#00a8ff] to-[#46d2d6] transition-[width] duration-150 ease-out shadow-[0_0_8px_rgba(24,119,242,0.5)]"
-            style={{ width: `${readProgress}%` }}
-          />
+          {isLoadingContent ? (
+            <div
+              id="reader-loading-progress-bar"
+              className="h-full w-1/2 bg-linear-to-r from-transparent via-[#1877f2] to-transparent animate-pulse translate-x-1/2"
+            />
+          ) : (
+            readProgress > 0 && (
+              <div
+                id="reader-progress-bar"
+                data-testid="reading-progress-bar"
+                className="h-full bg-linear-to-r from-[#1877f2] via-[#00a8ff] to-[#46d2d6] transition-[width] duration-150 ease-out shadow-[0_0_8px_rgba(24,119,242,0.5)]"
+                style={{ width: `${readProgress}%` }}
+              />
+            )
+          )}
         </div>
       </div>
 
@@ -330,7 +393,7 @@ export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
             <span>{isDraftPreview ? 'Unpublished' : 'Published'}</span>
           </div>
 
-          {readProgress > 0 && (
+          {!isLocked && readProgress > 0 && (
             <span
               className={`hidden md:inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold ${
                 isDocDark
@@ -341,10 +404,27 @@ export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
               {readProgress}%
             </span>
           )}
+
+          {isLoadingContent && (
+            <span
+              id="reader-loading-badge"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border animate-pulse ${
+                isDocDark
+                  ? 'bg-blue-500/15 text-[#60a5fa] border-blue-500/30'
+                  : 'bg-[#e7f3ff] text-[#1877f2] border-[#d8e4f8]'
+              }`}
+            >
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>
+                Loading chapter{contentSize > 0 ? ` (${Math.max(1, Math.round(contentSize / 1024))} KB)` : '...'}
+              </span>
+            </span>
+          )}
         </div>
 
         {/* Right: Actions */}
         <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
+
           {/* Table of Contents Button */}
           {toc.length > 0 && (
             <button
@@ -384,7 +464,7 @@ export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
             onClick={handleOpenInTab}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs ${
               isDocDark
-                ? 'bg-white/10 hover:bg-white/20 text-[#f5f2eb] border border-white/10'
+                ? 'bg-white/10 hover:bg-white/20 text-[#f5f2eb] border border-[#262c36]'
                 : 'bg-white hover:bg-[#e4e6eb] text-[#050505] border border-[#ced0d4]'
             }`}
             title="Open markdown / note preview in a new browser tab"
@@ -437,43 +517,7 @@ export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
         </div>
       </div>
 
-      {/* 3. Resume Reading Banner (Floating toast if bookmark exists) */}
-      {savedMark && !resumeDismissed && (
-        <div className="absolute top-12 left-4 right-4 sm:left-auto sm:right-6 sm:w-96 z-50 p-3 rounded-xl bg-blue-600 text-white shadow-xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Bookmark className="w-4 h-4 fill-white shrink-0" />
-            <div className="min-w-0">
-              <p className="text-xs font-bold leading-tight">Continue where you left off</p>
-              <p className="text-[11px] text-blue-100 truncate">Saved position: {savedMark.progress}%</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={handleResume}
-              className="px-2.5 py-1 rounded-lg bg-white text-blue-600 text-xs font-bold hover:bg-blue-50 transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-            >
-              <ArrowDown className="w-3 h-3" />
-              <span>Resume</span>
-            </button>
-            <button
-              onClick={handleClearMark}
-              className="px-2 py-1 rounded-lg text-blue-100 hover:text-white text-[11px] font-medium transition-colors cursor-pointer"
-              title="Clear mark"
-            >
-              Clear
-            </button>
-            <button
-              onClick={() => setResumeDismissed(true)}
-              className="p-1 rounded-lg text-blue-200 hover:text-white transition-colors cursor-pointer"
-              title="Dismiss"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 4. Dynamic Floating Table of Contents Sidebar */}
+      {/* 3. Dynamic Floating Table of Contents Sidebar */}
       <FloatingTableOfContents
         headings={toc}
         activeHeadingId={activeHeadingId}
@@ -488,42 +532,76 @@ export const HtmlRenderer: React.FC<HtmlRendererProps> = ({
         onTogglePinned={handleTogglePinned}
       />
 
-      {/* 5. Native Browser Isolated HTML Iframe */}
-      <div className={`flex-1 w-full h-full relative overflow-hidden transition-all duration-200 ${
-        isTocPinned && isTocOpen ? 'xl:pr-96' : ''
-      }`}>
-        <BrowserHtmlFrame
-          key={`${chapterId}-${currentCssMode}-${customCssFileName}`}
-          ref={frameRef}
-          htmlContent={htmlContent}
-          title={title}
-          chapterId={chapterId}
-          includeGlobalCss={currentCssMode === 'global'}
-          cssMode={currentCssMode}
-          customCss={customCss}
-          customCssFileName={customCssFileName}
-          initialScrollTop={savedMark?.scrollTop}
-          onScroll={handleScroll}
-          onActiveHeadingChange={(id) => setActiveHeadingId(id)}
-          onHeadingsExtracted={(headings) => {
-            if (headings && headings.length > 0) {
-              setToc(headings);
-            }
-          }}
-          className="w-full h-full"
-        />
-      </div>
-
-      {/* 6. Floating Scroll to Top Button (shown when no TOC sections exist) */}
-      {showScrollTop && toc.length === 0 && (
-        <button
-          id="scroll-to-top-btn"
-          onClick={handleScrollToTop}
-          className="fixed bottom-6 right-6 p-3 rounded-full bg-[#1877f2] hover:bg-[#166fe5] text-white shadow-xl shadow-blue-500/30 hover:scale-105 transition-all z-40 cursor-pointer"
-          title="Back to top"
+      {/* 4. Document Content (Scribd Locked Modal vs Fully Unlocked Iframe) */}
+      {isLocked ? (
+        <div
+          id="scribd-reader-container"
+          className="flex-1 min-h-0 w-full relative overflow-hidden flex items-center justify-center bg-white dark:bg-[#0c1015]"
         >
-          <ArrowUp className="w-4 h-4" />
-        </button>
+          {/* Document Preview in the background with subtle blur */}
+          <div className="absolute inset-0 overflow-hidden select-none pointer-events-none opacity-40 dark:opacity-30 filter blur-[1.5px]">
+            <BrowserHtmlFrame
+              key={`${chapterId}-${currentCssMode}-${customCssFileName}-${isDocDark ? 'dark' : 'light'}-locked`}
+              ref={frameRef}
+              theme={isDocDark ? 'dark' : 'light'}
+              htmlContent={htmlContent}
+              title={title}
+              chapterId={chapterId}
+              topicName={topicName}
+              isLoading={isLoadingContent}
+              contentSize={contentSize}
+              includeGlobalCss={currentCssMode === 'global'}
+              cssMode={currentCssMode}
+              customCss={customCss}
+              customCssFileName={customCssFileName}
+              className="w-full h-full pointer-events-none"
+            />
+          </div>
+
+          {/* Modal Overlay directly inside the content pane */}
+          <div className="absolute inset-0 z-30 flex items-center justify-center p-4 sm:p-6 overflow-y-auto bg-black/30 dark:bg-black/60 backdrop-blur-xs">
+            <ScribdLockOverlay
+              chapterTitle={title}
+              topicName={topicName}
+              firstChapter={firstChapterInTopic}
+              onUnlockClick={() => onRequireAuth?.(`Sign in to unlock full chapter "${title}"`)}
+              onSelectChapter={onSelectChapter}
+              isDark={isDocDark}
+            />
+          </div>
+        </div>
+      ) : (
+        /* Native Browser Isolated HTML Iframe (Fully Unlocked) */
+        <div className={`flex-1 min-h-0 w-full relative overflow-hidden transition-all duration-200 ${
+          isDocDark ? 'bg-[#0c1015]' : 'bg-white'
+        } ${
+          isTocPinned && isTocOpen ? 'xl:pr-96' : ''
+        }`}>
+          <BrowserHtmlFrame
+            key={`${chapterId}-${currentCssMode}-${customCssFileName}-${isDocDark ? 'dark' : 'light'}`}
+            ref={frameRef}
+            theme={isDocDark ? 'dark' : 'light'}
+            htmlContent={htmlContent}
+            title={title}
+            chapterId={chapterId}
+            topicName={topicName}
+            isLoading={isLoadingContent}
+            contentSize={contentSize}
+            includeGlobalCss={currentCssMode === 'global'}
+            cssMode={currentCssMode}
+            customCss={customCss}
+            customCssFileName={customCssFileName}
+            initialScrollTop={savedMark?.scrollTop}
+            onScroll={handleScroll}
+            onActiveHeadingChange={(id) => setActiveHeadingId(id)}
+            onHeadingsExtracted={(headings) => {
+              if (headings && headings.length > 0) {
+                setToc(headings);
+              }
+            }}
+            className="w-full h-full"
+          />
+        </div>
       )}
     </div>
   );

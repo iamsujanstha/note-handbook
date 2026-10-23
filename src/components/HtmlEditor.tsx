@@ -35,6 +35,7 @@ import {
 interface HtmlEditorProps {
   chapter: Chapter;
   topicName?: string;
+  isLoadingContent?: boolean;
   onSaveDraft: (
     draftHtml: string,
     title: string,
@@ -62,6 +63,7 @@ interface HtmlEditorProps {
 export const HtmlEditor: React.FC<HtmlEditorProps> = ({
   chapter,
   topicName,
+  isLoadingContent = false,
   onSaveDraft,
   onPublish,
   onCancel,
@@ -70,11 +72,7 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
 }) => {
   const [title, setTitle] = useState(chapter.title);
   const [draftHtml, setDraftHtml] = useState(chapter.draftHtml || chapter.publishedHtml || '');
-  const [cssMode, setCssMode] = useState<ChapterCssMode>(() => {
-    if (chapter.cssMode) return chapter.cssMode;
-    if (chapter.customCss) return 'custom';
-    return chapter.includeGlobalCss === false ? 'none' : 'global';
-  });
+  const [cssMode, setCssMode] = useState<ChapterCssMode>('global');
   const [customCss, setCustomCss] = useState<string>(chapter.customCss || '');
   const [customCssFileName, setCustomCssFileName] = useState<string>(chapter.customCssFileName || '');
   const [viewLayout, setViewLayout] = useState<'split' | 'edit' | 'preview'>('split');
@@ -101,14 +99,27 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
     }
   });
 
-  // Dynamically re-parse Markdown/HTML headings as author edits
+  // Dynamically re-parse Markdown/HTML headings with debounce so editing large documents remains 60fps smooth
   useEffect(() => {
-    const headings = parseMarkdownHeadings(draftHtml);
-    setEditorToc(headings);
+    const delay = draftHtml.length > 25000 ? 250 : 60;
+    const timer = setTimeout(() => {
+      const headings = parseMarkdownHeadings(draftHtml);
+      setEditorToc(headings);
+    }, delay);
+    return () => clearTimeout(timer);
   }, [draftHtml]);
 
   // Auto-detect whether the content is Markdown or HTML
   const isMarkdown = useMemo(() => isMarkdownContent(draftHtml), [draftHtml]);
+
+  // Detect whether chapter content is actively being fetched from backend
+  const isHydratingContent = Boolean(
+    isLoadingContent ||
+      (!draftHtml &&
+        !hasUnsavedChanges &&
+        (chapter.hasContent || (chapter.contentSize && chapter.contentSize > 0)) &&
+        chapter.isContentLoaded === false)
+  );
 
   // Markdown formatting helper for keyboard shortcuts
   const wrapSelection = (before: string, after: string = before, placeholder: string = 'text') => {
@@ -210,7 +221,7 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
     setHasUnsavedChanges(isDifferent);
   }, [draftHtml, title, cssMode, customCss, customCssFileName, chapter]);
 
-  // Keep ref to latest values to guarantee flushing on unmount or before switching chapters
+  // Keep ref to latest values to guarantee flushing on unmount, chapter switch, or immediate publish after upload
   const latestValuesRef = useRef({
     chapterId: chapter.id,
     draftHtml,
@@ -223,6 +234,8 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
     hasUnsavedChanges,
     onSaveDraft,
   });
+
+  const pendingFileReadRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     latestValuesRef.current = {
@@ -241,7 +254,7 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
 
   const lastChapterIdRef = useRef(chapter.id);
 
-  // Synchronize state when switching chapters so no content is shared and data is never desynchronized
+  // Synchronize state ONLY when switching to a different chapter ID (never clobber active editor content on the same chapter)
   useEffect(() => {
     const isNewChapter = chapter.id !== lastChapterIdRef.current;
     if (isNewChapter) {
@@ -259,27 +272,42 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
         );
       }
       lastChapterIdRef.current = chapter.id;
-      setTitle(chapter.title);
-      setDraftHtml(chapter.draftHtml || chapter.publishedHtml || '');
+      const nextDraft = chapter.draftHtml || chapter.publishedHtml || '';
       const mode =
         chapter.cssMode ||
         (chapter.customCss ? 'custom' : chapter.includeGlobalCss === false ? 'none' : 'global');
+      latestValuesRef.current.chapterId = chapter.id;
+      latestValuesRef.current.title = chapter.title;
+      latestValuesRef.current.draftHtml = nextDraft;
+      latestValuesRef.current.cssMode = mode;
+      latestValuesRef.current.includeGlobalCss = mode === 'global';
+      latestValuesRef.current.hasUnsavedChanges = false;
+      setTitle(chapter.title);
+      setDraftHtml(nextDraft);
       setCssMode(mode);
       setCustomCss(chapter.customCss || '');
       setCustomCssFileName(chapter.customCssFileName || '');
       setHasUnsavedChanges(false);
-    } else if (!hasUnsavedChanges) {
-      // If user is not currently in the middle of unsaved typing, stay in sync with external updates
-      setTitle(chapter.title);
-      setDraftHtml(chapter.draftHtml || chapter.publishedHtml || '');
-      const mode =
-        chapter.cssMode ||
-        (chapter.customCss ? 'custom' : chapter.includeGlobalCss === false ? 'none' : 'global');
-      setCssMode(mode);
-      setCustomCss(chapter.customCss || '');
-      setCustomCssFileName(chapter.customCssFileName || '');
+    } else {
+      if (chapter.title !== latestValuesRef.current.title && !latestValuesRef.current.hasUnsavedChanges) {
+        // Sync title if renamed from the sidebar while no unsaved edits exist
+        latestValuesRef.current.title = chapter.title;
+        setTitle(chapter.title);
+      }
+      const incomingDraft = chapter.draftHtml || chapter.publishedHtml || '';
+      if (
+        incomingDraft &&
+        !latestValuesRef.current.draftHtml &&
+        !latestValuesRef.current.hasUnsavedChanges
+      ) {
+        // Hydrate lazy-loaded content when it finishes fetching for the active chapter
+        latestValuesRef.current.draftHtml = incomingDraft;
+        setDraftHtml(incomingDraft);
+        if (chapter.customCss) setCustomCss(chapter.customCss);
+        if (chapter.customCssFileName) setCustomCssFileName(chapter.customCssFileName);
+      }
     }
-  }, [chapter.id, chapter.title, chapter.draftHtml, chapter.publishedHtml, chapter.updatedAt, hasUnsavedChanges]);
+  }, [chapter.id, chapter.title, chapter.draftHtml, chapter.publishedHtml, chapter.customCss, chapter.customCssFileName]);
 
   // Flush unsaved changes on unmount (e.g. switching from CMS Editor to Reader View)
   useEffect(() => {
@@ -301,121 +329,151 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
 
   // File loading helper for .md, .markdown, .html, .htm, .css
   const loadFileContent = async (file: File) => {
-    setUploadProgressState({
-      isUploading: true,
-      fileName: file.name,
-      fileSize: file.size,
-      progress: 0,
-      bytesLoaded: 0,
-      bytesTotal: file.size || 1,
-      phase: 'reading',
-    });
+    const processPromise = (async () => {
+      setUploadProgressState({
+        isUploading: true,
+        fileName: file.name,
+        fileSize: file.size,
+        progress: 0,
+        bytesLoaded: 0,
+        bytesTotal: file.size || 1,
+        phase: 'reading',
+      });
 
-    const isCss = file.name.endsWith('.css') || file.type === 'text/css';
+      const isCss = file.name.endsWith('.css') || file.type === 'text/css';
 
-    try {
-      // 1. Read file with smooth progress reporting (0% to 100%, or 0% to 50% if uploading CSS to server)
-      const text = await readFileWithProgress(
-        file,
-        (pct, loaded, total) => {
-          const displayPct = isCss ? Math.round(pct * 0.5) : pct;
-          setUploadProgressState((prev) => ({
-            ...prev,
-            progress: displayPct,
-            bytesLoaded: loaded,
-            bytesTotal: total,
-            phase: 'reading',
-          }));
-        },
-        500
-      );
-
-      if (!text) {
-        setUploadProgressState(initialUploadProgressState);
-        return;
-      }
-
-      if (isCss) {
-        setUploadProgressState((prev) => ({ ...prev, phase: 'uploading' }));
-        try {
-          // Permanently save to server & storage (setAsGlobal: false so it does NOT apply to all HTML!)
-          await uploadCssFileApi(text, file.name, false, (pct, loaded, total) => {
-            const displayPct = 50 + Math.round(pct * 0.5);
+      try {
+        // 1. Read file with smooth progress reporting
+        const text = await readFileWithProgress(
+          file,
+          (pct, loaded, total) => {
+            const displayPct = isCss ? Math.round(pct * 0.5) : pct;
             setUploadProgressState((prev) => ({
               ...prev,
-              progress: Math.min(displayPct, 99),
+              progress: displayPct,
               bytesLoaded: loaded,
               bytesTotal: total,
-              phase: 'uploading',
+              phase: 'reading',
             }));
-          });
+          },
+          180
+        );
 
-          saveStoredCustomCssFile({
-            filename: file.name,
-            cssContent: text,
-            size: text.length,
-            updatedAt: new Date().toISOString(),
-            isGlobal: false,
-          });
-
-          // Set specifically for this note
-          setCustomCss(text);
-          setCustomCssFileName(file.name);
-          setCssMode('custom');
-          setHasUnsavedChanges(true);
-          setUploadProgressState((prev) => ({ ...prev, progress: 100, phase: 'done' }));
-          setImportNotification(`Saved "${file.name}"! Applied to this note only (not all notes).`);
-          setTimeout(() => {
-            setImportNotification(null);
-            setUploadProgressState(initialUploadProgressState);
-          }, 3500);
-        } catch {
-          setUploadProgressState((prev) => ({
-            ...prev,
-            phase: 'error',
-            errorMessage: 'Failed to upload CSS file',
-          }));
-          setImportNotification('Failed to upload CSS file');
-          setTimeout(() => setUploadProgressState(initialUploadProgressState), 3000);
+        if (!text) {
+          setUploadProgressState(initialUploadProgressState);
+          return;
         }
-        return;
+
+        if (isCss) {
+          setUploadProgressState((prev) => ({ ...prev, phase: 'uploading' }));
+          try {
+            await uploadCssFileApi(text, file.name, false, (pct, loaded, total) => {
+              const displayPct = 50 + Math.round(pct * 0.5);
+              setUploadProgressState((prev) => ({
+                ...prev,
+                progress: Math.min(displayPct, 99),
+                bytesLoaded: loaded,
+                bytesTotal: total,
+                phase: 'uploading',
+              }));
+            });
+
+            saveStoredCustomCssFile({
+              filename: file.name,
+              cssContent: text,
+              size: text.length,
+              updatedAt: new Date().toISOString(),
+              isGlobal: false,
+            });
+
+            setCustomCss(text);
+            setCustomCssFileName(file.name);
+            setCssMode('custom');
+            setHasUnsavedChanges(true);
+            setUploadProgressState((prev) => ({ ...prev, progress: 100, phase: 'done' }));
+            setImportNotification(`Saved "${file.name}"! Applied to this note only (not all notes).`);
+            setTimeout(() => {
+              setImportNotification(null);
+              setUploadProgressState(initialUploadProgressState);
+            }, 3500);
+          } catch {
+            setUploadProgressState((prev) => ({
+              ...prev,
+              phase: 'error',
+              errorMessage: 'Failed to upload CSS file',
+            }));
+            setImportNotification('Failed to upload CSS file');
+            setTimeout(() => setUploadProgressState(initialUploadProgressState), 3000);
+          }
+          return;
+        }
+
+        const isMdFile = file.name.endsWith('.md') || file.name.endsWith('.markdown') || isMarkdownContent(text);
+        const extractedTitle = extractTitle(text, file.name);
+        const currentTitle = latestValuesRef.current.title || title;
+
+        let nextTitle = currentTitle;
+        if (
+          extractedTitle &&
+          (!currentTitle ||
+            currentTitle.trim() === 'Untitled' ||
+            currentTitle.toLowerCase().startsWith('new chapter') ||
+            /^chapter\s+\d+$/i.test(currentTitle.trim()))
+        ) {
+          nextTitle = extractedTitle;
+          setTitle(nextTitle);
+        }
+
+        const nextCssMode: ChapterCssMode = isMdFile ? 'none' : 'global';
+        setCssMode(nextCssMode);
+        setDraftHtml(text);
+        setHasUnsavedChanges(true);
+
+        // Update synchronous ref immediately so clicking Publish right away uses this exact uploaded file
+        latestValuesRef.current = {
+          ...latestValuesRef.current,
+          draftHtml: text,
+          title: nextTitle,
+          cssMode: nextCssMode,
+          includeGlobalCss: nextCssMode === 'global',
+          hasUnsavedChanges: true,
+        };
+
+        // Immediately sync uploaded file content to parent chapter state so it is never lost
+        onSaveDraft(
+          text,
+          nextTitle,
+          chapter.tags || [],
+          nextCssMode === 'global',
+          nextCssMode,
+          undefined,
+          undefined
+        );
+
+        setUploadProgressState((prev) => ({ ...prev, progress: 100, phase: 'done' }));
+        setImportNotification(`Imported "${file.name}"`);
+        setTimeout(() => {
+          setImportNotification(null);
+          setUploadProgressState(initialUploadProgressState);
+        }, 2000);
+      } catch (err: any) {
+        setUploadProgressState((prev) => ({
+          ...prev,
+          phase: 'error',
+          errorMessage: err?.message || 'Failed to read file',
+        }));
+        setImportNotification('Failed to read file');
+        setTimeout(() => setUploadProgressState(initialUploadProgressState), 3000);
       }
+    })();
 
-      const isMdFile = file.name.endsWith('.md') || file.name.endsWith('.markdown') || isMarkdownContent(text);
-      const extractedTitle = extractTitle(text, file.name);
-
-      if (
-        extractedTitle &&
-        (!title ||
-          title.trim() === 'Untitled' ||
-          title.toLowerCase().startsWith('new chapter') ||
-          /^chapter\s+\d+$/i.test(title.trim()))
-      ) {
-        setTitle(extractedTitle);
+    pendingFileReadRef.current = processPromise;
+    try {
+      await processPromise;
+    } finally {
+      if (pendingFileReadRef.current === processPromise) {
+        pendingFileReadRef.current = null;
       }
-
-      if (isMdFile) {
-        setCssMode('none');
-      }
-
-      setDraftHtml(text);
-      setHasUnsavedChanges(true);
-      setUploadProgressState((prev) => ({ ...prev, progress: 100, phase: 'done' }));
-      setImportNotification(
-        `Imported "${file.name}" (GitHub Markdown)`
-      );
-      setTimeout(() => {
-        setImportNotification(null);
-        setUploadProgressState(initialUploadProgressState);
-      }, 2000);
-    } catch (err: any) {
-      setUploadProgressState((prev) => ({
-        ...prev,
-        phase: 'error',
-        errorMessage: err?.message || 'Failed to read file',
-      }));
-      setImportNotification('Failed to read file');
-      setTimeout(() => setUploadProgressState(initialUploadProgressState), 3000);
     }
   };
 
@@ -456,25 +514,26 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
   const handlePublishClick = async () => {
     setIsPublishing(true);
     try {
-      // If Markdown, compile to high-fidelity HTML for instant reader rendering, while preserving draftHtml as markdown
-      let finalHtmlToPublish = draftHtml;
-      if (isMarkdown) {
-        try {
-          finalHtmlToPublish = await convertMarkdownToHtml(draftHtml, { title });
-        } catch (err) {
-          console.warn('Markdown publish compile error:', err);
-        }
+      // If a file upload is currently finishing its read cycle, wait for it so we never publish placeholder text
+      if (pendingFileReadRef.current) {
+        await pendingFileReadRef.current;
       }
+
+      const currentDraft = latestValuesRef.current.draftHtml;
+      const currentTitle = latestValuesRef.current.title || title;
+      const currentIsMd = isMarkdownContent(currentDraft);
+
       await onPublish(
-        finalHtmlToPublish,
-        title,
+        currentDraft,
+        currentTitle,
         chapter.tags || [],
-        draftHtml,
-        isMarkdown ? false : cssMode === 'global',
-        isMarkdown ? 'none' : cssMode,
-        isMarkdown ? undefined : customCss,
-        isMarkdown ? undefined : customCssFileName
+        currentDraft,
+        !currentIsMd,
+        currentIsMd ? 'none' : 'global',
+        undefined,
+        undefined
       );
+      latestValuesRef.current.hasUnsavedChanges = false;
       setHasUnsavedChanges(false);
     } finally {
       setIsPublishing(false);
@@ -529,7 +588,10 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
             type="text"
             value={title}
             onChange={(e) => {
-              setTitle(e.target.value);
+              const nextVal = e.target.value;
+              latestValuesRef.current.title = nextVal;
+              latestValuesRef.current.hasUnsavedChanges = true;
+              setTitle(nextVal);
               setHasUnsavedChanges(true);
             }}
             placeholder="Chapter Title..."
@@ -616,7 +678,7 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
             label="Upload File"
             uploadingLabel="Uploading"
             doneLabel="Uploaded!"
-            title="Upload .html, .md, or .css stylesheet into note"
+            title="Upload .html or .md file into note"
           />
 
           {/* Preview Option: Hide Header & Sidebar, Display Only Content */}
@@ -683,11 +745,42 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
                   </span>
                 )}
               </div>
-              <span className="font-medium text-[#65676b] dark:text-[#94a3b8] shrink-0 ml-2">
-                {draftHtml.length.toLocaleString()} characters
-              </span>
+              {isHydratingContent ? (
+                <span className="inline-flex items-center gap-1.5 text-[#1877f2] dark:text-[#60a5fa] font-semibold shrink-0 ml-2">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>
+                    Loading source{chapter.contentSize ? ` (${formatBytes(chapter.contentSize)})` : '...'}
+                  </span>
+                </span>
+              ) : (
+                <span className="font-medium text-[#65676b] dark:text-[#94a3b8] shrink-0 ml-2">
+                  {draftHtml.length.toLocaleString()} characters
+                </span>
+              )}
             </div>
             <div className="relative flex-1 flex flex-col min-h-0">
+              {/* While chapter source is being fetched on navigation, show a centered circular loader */}
+              {isHydratingContent && !uploadProgressState.isUploading && (
+                <div
+                  id="editor-source-loading-overlay"
+                  role="status"
+                  aria-live="polite"
+                  className="absolute inset-0 z-20 bg-[#f8fafc] dark:bg-[#0e1217] p-6 flex flex-col items-center justify-center gap-3 select-none overflow-hidden"
+                >
+                  <div className="w-9 h-9 rounded-full border-[3px] border-[#e2e8f0] dark:border-[#1e293b] border-t-[#1877f2] dark:border-t-[#38bdf8] border-r-[#1877f2] dark:border-r-[#38bdf8] animate-spin" />
+                  <div className="text-center space-y-0.5">
+                    <p className="text-xs font-semibold text-[#050505] dark:text-[#f8fafc]">
+                      Loading source for &ldquo;{title || chapter.title}&rdquo;...
+                    </p>
+                    {chapter.contentSize && chapter.contentSize > 0 ? (
+                      <p className="text-[11px] font-mono text-[#65676b] dark:text-[#94a3b8]">
+                        {formatBytes(chapter.contentSize)}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
               {/* While file is being uploaded, show clear, prominent progress overlay in the HTML source area */}
               {uploadProgressState.isUploading && (
                 <div
@@ -739,7 +832,13 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
                 id="raw-html-textarea"
                 ref={textareaRef}
                 value={draftHtml}
-                onChange={(e) => setDraftHtml(e.target.value)}
+                onChange={(e) => {
+                  const nextVal = e.target.value;
+                  latestValuesRef.current.draftHtml = nextVal;
+                  latestValuesRef.current.hasUnsavedChanges = true;
+                  setDraftHtml(nextVal);
+                  setHasUnsavedChanges(true);
+                }}
                 onKeyDown={handleTextareaKeyDown}
                 placeholder="Paste or write Markdown (.md) or raw HTML here..."
                 className="flex-1 w-full p-4 pb-4 font-mono text-xs leading-relaxed bg-[#f8fafc] dark:bg-[#0e1217] text-[#050505] dark:text-[#f8fafc] border-none focus:outline-hidden resize-none selection:bg-[#1877f2]/20 selection:text-[#1877f2]"
@@ -749,23 +848,20 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
           </div>
         )}
 
-        {/* Right Pane: Live Preview with Mermaid Diagrams (File content stays light) */}
+        {/* Right Pane: Live Preview with Mermaid Diagrams */}
         {(viewLayout === 'preview' || viewLayout === 'split') && (() => {
           return (
-            <div className={`flex flex-col h-full overflow-hidden bg-white text-[#1c1e21] ${viewLayout === 'split' ? 'w-1/2' : 'w-full'}`}>
+            <div className={`flex flex-col h-full overflow-hidden bg-white dark:bg-[#0c1015] text-[#1c1e21] dark:text-[#f0f3f6] ${viewLayout === 'split' ? 'w-1/2' : 'w-full'}`}>
               <div className="px-4 py-2 border-b text-[11px] font-mono flex justify-between items-center shrink-0 z-10 bg-[#f0f2f5] dark:bg-[#13171f] border-[#e4e6eb] dark:border-[#262c36] text-[#65676b] dark:text-[#94a3b8]">
                 <span className="font-bold text-[#050505] dark:text-[#f8fafc]">
                   Live Browser Render
                 </span>
-                <span className="text-[11px] text-[#65676b] dark:text-[#94a3b8]">
-                  {isMarkdown
-                    ? 'Markdown Preview'
-                    : cssMode === 'custom'
-                    ? `Custom CSS: ${customCssFileName || 'custom.css'}`
-                    : cssMode === 'global'
-                    ? 'Global Theme'
-                    : 'Raw HTML'}
-                </span>
+                {isHydratingContent && (
+                  <span className="inline-flex items-center gap-1.5 text-[#1877f2] dark:text-[#60a5fa] font-semibold">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Syncing preview...</span>
+                  </span>
+                )}
               </div>
               <div className="flex-1 w-full h-full relative overflow-hidden">
                 {/* Dynamic Floating Table of Contents in Live Preview */}
@@ -796,14 +892,15 @@ export const HtmlEditor: React.FC<HtmlEditorProps> = ({
 
                 <BrowserHtmlFrame
                   ref={editorFrameRef}
-                  key={`${chapter.id}-${isMarkdown ? 'none' : cssMode}-${customCssFileName}`}
+                  key={`${chapter.id}-${isMarkdown ? 'none' : 'global'}`}
                   chapterId={chapter.id}
                   htmlContent={draftHtml}
                   title={title || 'Chapter Preview'}
-                  includeGlobalCss={!isMarkdown && cssMode === 'global'}
-                  cssMode={isMarkdown ? 'none' : cssMode}
-                  customCss={isMarkdown ? undefined : customCss}
-                  customCssFileName={isMarkdown ? undefined : customCssFileName}
+                  topicName={topicName}
+                  isLoading={isHydratingContent}
+                  contentSize={chapter.contentSize}
+                  includeGlobalCss={!isMarkdown}
+                  cssMode={isMarkdown ? 'none' : 'global'}
                   onScroll={(_top, _height, _client, progress) => {
                     setEditorReadProgress(progress);
                   }}

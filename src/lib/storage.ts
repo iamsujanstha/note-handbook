@@ -72,6 +72,11 @@ const DEFAULT_MOCK_CHAPTER_IDS = new Set([
   'chap-be-postgres-internals',
   'chap-be-concurrency-locks',
   'chap-devops-kubernetes',
+  // Superseded / obsolete system design test chapters
+  'chap-1790522577359',
+  'chap-1790585244206',
+  'chap-1790585715770',
+  'chap-1790586060649',
 ]);
 
 export function getStoredTopics(): Topic[] {
@@ -95,35 +100,168 @@ export function saveStoredTopics(topics: Topic[]): void {
   }
 }
 
+// Bounded in-memory LRU cache for full chapter bodies to avoid keeping hundreds of multi-MB strings in React state or localStorage
+interface CachedChapterBody {
+  draftHtml: string;
+  publishedHtml: string;
+  customCss?: string;
+  updatedAt?: string;
+  byteSize: number;
+}
+
+const MAX_LRU_CHAPTERS = 24;
+const MAX_LRU_TOTAL_BYTES = 28 * 1024 * 1024; // ~28MB max in-memory cache
+const MAX_LOCALSTORAGE_INLINE_CHAPTER_CHARS = 48 * 1024; // 48KB per inline chapter in localStorage
+const MAX_LOCALSTORAGE_TOTAL_CHARS = 1400 * 1024; // 1.4MB total budget for chapters in localStorage
+const MAX_STORED_READING_POSITIONS = 200;
+
+const chapterBodyLru = new Map<string, CachedChapterBody>();
+let currentLruBytes = 0;
+
+export function cacheChapterContent(chapter: Partial<Chapter> & { id: string }): void {
+  if (!chapter || !chapter.id) return;
+  const draft = chapter.draftHtml || chapter.publishedHtml || '';
+  const pub = chapter.publishedHtml || draft;
+  if (!draft && !pub && !chapter.customCss) return;
+
+  const existing = chapterBodyLru.get(chapter.id);
+  if (existing) {
+    currentLruBytes = Math.max(0, currentLruBytes - existing.byteSize);
+    chapterBodyLru.delete(chapter.id);
+  }
+
+  // Share string reference when draft and published are identical
+  const canonicalPub = pub === draft ? draft : pub;
+  const byteSize = draft.length + (canonicalPub === draft ? 0 : canonicalPub.length) + (chapter.customCss?.length || 0);
+
+  chapterBodyLru.set(chapter.id, {
+    draftHtml: draft,
+    publishedHtml: canonicalPub,
+    customCss: chapter.customCss,
+    updatedAt: chapter.updatedAt,
+    byteSize,
+  });
+  currentLruBytes += byteSize;
+
+  // Evict oldest entries if over count or byte budget
+  while (
+    chapterBodyLru.size > MAX_LRU_CHAPTERS ||
+    (currentLruBytes > MAX_LRU_TOTAL_BYTES && chapterBodyLru.size > 2)
+  ) {
+    const oldestKey = chapterBodyLru.keys().next().value;
+    if (!oldestKey) break;
+    const evicted = chapterBodyLru.get(oldestKey);
+    if (evicted) {
+      currentLruBytes = Math.max(0, currentLruBytes - evicted.byteSize);
+    }
+    chapterBodyLru.delete(oldestKey);
+  }
+}
+
+export function getCachedChapterContent(chapterId: string): CachedChapterBody | null {
+  const entry = chapterBodyLru.get(chapterId);
+  if (!entry) return null;
+  // Touch LRU order
+  chapterBodyLru.delete(chapterId);
+  chapterBodyLru.set(chapterId, entry);
+  return entry;
+}
+
+export function evictCachedChapterContent(chapterId: string): void {
+  const existing = chapterBodyLru.get(chapterId);
+  if (existing) {
+    currentLruBytes = Math.max(0, currentLruBytes - existing.byteSize);
+    chapterBodyLru.delete(chapterId);
+  }
+}
+
+/**
+ * Hydrates a list of chapter summaries with any bodies currently held in the in-memory LRU cache,
+ * while keeping non-active chapters lightweight if they exceed memory limits.
+ */
+export function hydrateChaptersFromCache(
+  chapters: Chapter[],
+  activeChapterId?: string | null
+): Chapter[] {
+  return chapters.map((c) => {
+    const canonical = c.draftHtml || c.publishedHtml || '';
+    if (canonical) {
+      cacheChapterContent(c);
+      // Keep full body on the chapter object if it's the active chapter or small (<32KB)
+      if (c.id === activeChapterId || canonical.length <= 32768) {
+        return {
+          ...c,
+          draftHtml: canonical,
+          publishedHtml: canonical,
+          hasContent: true,
+          contentSize: canonical.length,
+          isContentLoaded: true,
+        };
+      }
+      // Strip multi-MB body from React list state for inactive chapters (it stays safely in LRU cache & server DB)
+      return {
+        ...c,
+        draftHtml: '',
+        publishedHtml: '',
+        customCss: undefined,
+        hasContent: true,
+        contentSize: canonical.length,
+        isContentLoaded: false,
+      };
+    }
+
+    const cached = chapterBodyLru.get(c.id);
+    if (cached && (c.id === activeChapterId || cached.byteSize <= 32768)) {
+      return {
+        ...c,
+        draftHtml: cached.draftHtml,
+        publishedHtml: cached.publishedHtml || cached.draftHtml,
+        customCss: c.customCss || cached.customCss,
+        hasContent: true,
+        contentSize: cached.draftHtml.length,
+        isContentLoaded: true,
+      };
+    }
+
+    return {
+      ...c,
+      hasContent: c.hasContent ?? Boolean(cached || canonical),
+      contentSize: c.contentSize ?? cached?.draftHtml.length ?? 0,
+      isContentLoaded: Boolean(canonical),
+    };
+  });
+}
+
 export function getStoredChapters(): Chapter[] {
   try {
     const raw = localStorage.getItem(CHAPTERS_STORAGE_KEY);
     if (!raw) {
-      localStorage.setItem(CHAPTERS_STORAGE_KEY, JSON.stringify(INITIAL_CHAPTERS));
       return INITIAL_CHAPTERS;
     }
     const parsed: Chapter[] = JSON.parse(raw);
-    // Filter out old default mock chapters and ensure draftHtml and publishedHtml are strictly synchronized
-    let modified = false;
-    const userChapters = parsed
-      .filter((c) => !DEFAULT_MOCK_CHAPTER_IDS.has(c.id))
+    const filtered = parsed.filter((c) => !DEFAULT_MOCK_CHAPTER_IDS.has(c.id));
+    if (filtered.length !== parsed.length) {
+      try {
+        localStorage.setItem(CHAPTERS_STORAGE_KEY, JSON.stringify(filtered));
+      } catch {}
+    }
+    return filtered
       .map((c) => {
         const canonical = c.draftHtml || c.publishedHtml || '';
-        if (c.draftHtml !== canonical || c.publishedHtml !== canonical) {
-          modified = true;
-          return {
-            ...c,
-            draftHtml: canonical,
-            publishedHtml: canonical,
-          };
+        if (canonical) {
+          cacheChapterContent(c);
         }
-        return c;
+        const cached = !canonical ? chapterBodyLru.get(c.id) : null;
+        const effectiveContent = canonical || cached?.draftHtml || '';
+        return {
+          ...c,
+          draftHtml: effectiveContent,
+          publishedHtml: effectiveContent,
+          hasContent: c.hasContent ?? effectiveContent.length > 0,
+          contentSize: c.contentSize ?? effectiveContent.length,
+          isContentLoaded: effectiveContent.length > 0,
+        };
       });
-
-    if (modified || userChapters.length !== parsed.length) {
-      localStorage.setItem(CHAPTERS_STORAGE_KEY, JSON.stringify(userChapters));
-    }
-    return userChapters;
   } catch {
     return INITIAL_CHAPTERS;
   }
@@ -131,18 +269,81 @@ export function getStoredChapters(): Chapter[] {
 
 export function saveStoredChapters(chapters: Chapter[]): void {
   try {
-    // Ensure all stored chapters have matching draftHtml and publishedHtml
-    const synchronized = chapters.map((c) => {
+    const activeId = getStoredLastActiveChapterId();
+    let totalInlineChars = 0;
+
+    // 1. Update in-memory LRU cache for any chapters with loaded content
+    for (const c of chapters) {
+      if (c.draftHtml || c.publishedHtml) {
+        cacheChapterContent(c);
+      }
+    }
+
+    // 2. Build quota-safe representation for localStorage (metadata always preserved; inline HTML capped to budget)
+    const compact = chapters.map((c) => {
       const canonical = c.draftHtml || c.publishedHtml || '';
+      const isPriority = c.id === activeId;
+      const canInline =
+        canonical.length > 0 &&
+        (canonical.length <= MAX_LOCALSTORAGE_INLINE_CHAPTER_CHARS ||
+          (isPriority && canonical.length <= 256 * 1024)) &&
+        totalInlineChars + canonical.length <= MAX_LOCALSTORAGE_TOTAL_CHARS;
+
+      if (canInline) {
+        totalInlineChars += canonical.length;
+      }
+
       return {
-        ...c,
-        draftHtml: canonical,
-        publishedHtml: canonical,
+        id: c.id,
+        topicId: c.topicId,
+        title: c.title,
+        slug: c.slug,
+        draftHtml: canInline ? canonical : '',
+        publishedHtml: '',
+        status: c.status,
+        tags: c.tags || [],
+        order: c.order,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+        lastPublishedAt: c.lastPublishedAt,
+        includeGlobalCss: c.includeGlobalCss,
+        cssMode: c.cssMode,
+        customCssFileName: c.customCssFileName,
+        hasContent: c.hasContent ?? canonical.length > 0,
+        contentSize: c.contentSize ?? canonical.length,
+        excerpt: c.excerpt,
       };
     });
-    localStorage.setItem(CHAPTERS_STORAGE_KEY, JSON.stringify(synchronized));
+
+    localStorage.setItem(CHAPTERS_STORAGE_KEY, JSON.stringify(compact));
   } catch (err) {
-    console.error('Failed to save chapters to localStorage', err);
+    // Fallback: store pure metadata without any HTML bodies so QuotaExceededError is completely impossible
+    try {
+      const metadataOnly = chapters.map((c) => ({
+        id: c.id,
+        topicId: c.topicId,
+        title: c.title,
+        slug: c.slug,
+        draftHtml: '',
+        publishedHtml: '',
+        status: c.status,
+        tags: c.tags || [],
+        order: c.order,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+        lastPublishedAt: c.lastPublishedAt,
+        includeGlobalCss: c.includeGlobalCss,
+        cssMode: c.cssMode,
+        customCssFileName: c.customCssFileName,
+        hasContent: c.hasContent ?? Boolean(c.draftHtml || c.publishedHtml),
+        contentSize: c.contentSize ?? (c.draftHtml || c.publishedHtml || '').length,
+      }));
+      localStorage.setItem(CHAPTERS_STORAGE_KEY, JSON.stringify(metadataOnly));
+    } catch {
+      try {
+        localStorage.removeItem(CHAPTERS_STORAGE_KEY);
+      } catch {}
+    }
   }
 }
 
@@ -225,6 +426,17 @@ export function saveStoredReadingPosition(chapterId: string, scrollTop: number, 
       progress: Math.min(100, Math.max(0, Math.round(progress))),
       updatedAt: new Date().toISOString(),
     };
+    const keys = Object.keys(positions);
+    if (keys.length > MAX_STORED_READING_POSITIONS) {
+      const sorted = keys.sort(
+        (a, b) =>
+          new Date(positions[b].updatedAt || 0).getTime() -
+          new Date(positions[a].updatedAt || 0).getTime()
+      );
+      for (let i = MAX_STORED_READING_POSITIONS; i < sorted.length; i++) {
+        delete positions[sorted[i]];
+      }
+    }
     localStorage.setItem(READING_POSITIONS_KEY, JSON.stringify(positions));
   } catch (err) {
     console.error('Failed to save reading position', err);
